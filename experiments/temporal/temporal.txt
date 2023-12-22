@@ -1,0 +1,300 @@
+I will present you with a sequence of observations from the gameplay of MiniHack.
+Recall that a single observation in MiniHack has three main parts: a) a *message* appearing on top of the screen; b) a *grid of symbols* showing the positions of entities in the room and c) a *set of statistics* at the bottom of the screen.
+I will present you with a sequence of these.
+
+First, tell me about your knowledge of MiniHack.
+Write an analysis describing the semantics of the observation strictly using information from the observation and your knowledge of MiniHack.
+
+Then, write an analysis describing the semantics of the sequence of observations focusing on the resons that could have led to the final observation.
+
+Finally, for each observation, respond by providing the number of the timestep that evaluate to be the most significant to reach the final observation.
+To report your evaluation, use the following format "Most significant timestep: 1", if you think that the first timestep is the most important.
+
+Now begins the sequence of observations:
+
+Timestep 1
+
+Hello Agent, welcome to NetHack!  You are a chaotic male human Rogue.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                       -@.|
+                                      ..(.|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 2
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(@|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 3
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |...@.|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 4
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |...@.|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 5
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |....@|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 6
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |....@|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 7
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |....@|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 8
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |....@|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 9
+
+There is nothing here to pick up.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |....@|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 10
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(.|
+                                    |....@|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 11
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----<.|
+                                    |...(@|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:15 Dx:17 Co:16 In:9 Wi:9 Ch:8 Chaotic S:0
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0

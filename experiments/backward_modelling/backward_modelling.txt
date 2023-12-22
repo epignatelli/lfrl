@@ -1,0 +1,136 @@
+I will present you with an observation from the gameplay of MiniHack. First, tell me about your knowledge of MiniHack.
+Write an analysis describing the semantics of the observation strictly using information from the observation and your knowledge of MiniHack.
+
+Finally, consider the observation and the action that the agent did to arrive at that state of the world and respond with an educated guess about the observation that immediately preceds the one given.
+
+Here are some examples of current observation and action paired to their relative previous observations.
+
+First pair:
+{"current observation": """
+ ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+ . . . . . . . ? ? ? ? ? ? . . . . . }
+ . . . . . . ` ? ? ? . . . . . . . . ?
+ . . . . . . ` ? . . . . . . . ` ? ? ?
+ . . . . . . . . . . . . . . . . . ? ?
+ . . . . @ . . . . . . . ` ? ? ? ? ? ?
+ . . . . . . . . . . . . . . ` ? ? ? ?
+ . . . . . . . . . . . . . . . . . . }
+? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?""",
+ "last action": "move down", "previous observation": """
+ . . . . . . . ? ? ? ? ? ? . . . . . }
+ . . . . . . ` ? ? ? . . . . . . . . ?
+ . . . . . . ` ? . . . . . . . ` ? ? ?
+ . . . . @ . . . . . . . . . . . . ? ?
+ . . . . . . . . . . . . ` ? ? ? ? ? ?
+ . . . . . . . . . . . . . . ` ? ? ? ?
+ . . . . . . . . . . . . . . . . . . }""",
+}
+
+Second pair:
+{"current observation": """
+ . . . . . . . ? ? ? ? ? ? . . . . . }
+ . . . . . . ` ? ? ? . . . . . . . . ?
+ . . . . . . ` ? . . . . . . . ` ? ? ?
+ . . . . . . . . . . . . . . . . . ? ?
+ . . . . . @ . . . . . . ` ? ? ? ? ? ?
+ . . . . . . . . . . . . . . ` ? ? ? ?
+ . . . . . . . . . . . . . . . . . . }""",
+ "last action": "move left", "previous observation": """
+ . . . . . . . ? ? ? ? ? ? . . . . . }
+ . . . . . . ` ? ? ? . . . . . . . . ?
+ . . . . . . ` ? . . . . . . . ` ? ? ?
+ . . . . . . . . . . . . . . . . . ? ?
+ . . . . . . @ . . . . . ` ? ? ? ? ? ?
+ . . . . . . . . . . . . . . ` ? ? ? ?
+ . . . . . . . . . . . . . . . . . . }""",
+}
+
+Question:
+{"current observation": """
+ . . . . . . . ? ? ? ? ? ? . . . . . }
+ . . . . . . ` ? ? ? . . . . . . . . ?
+ . . . . . . ` ? . . . . . . . ` ? ? ?
+ . . . . . . . . . . . . . . . . . ? ?
+ . . . . . @ . . . . . . ` ? ? ? ? ? ?
+ . . . . . . . . . . . . . . ` ? ? ? ?
+ . . . . . . . . . . . . . . . . . . }""",
+ "last action": "move up"}
+
+Complete the dictionary above with the correct "previous observation".
+
+
+--------
+
+
+
+Timestep 1
+   ----
+   |..|
+   +<.|
+----..|
+|.....|
+|..@..|
+-------
+
+Timestep 2
+   ----
+   |..|
+   +<.|
+----..|
+|.....|
+|...@.|
+-------
+
+Timestep 3
+   ----
+   |..|
+   +<.|
+----..|
+|...@.|
+|.....|
+-------
+
+Timestep 4
+   ----
+   |..|
+   +<.|
+----@.|
+|.....|
+|.....|
+-------
+
+Timestep 5
+   ----
+   |..|
+   +@.|
+----..|
+|.....|
+|.....|
+-------
+
+Timestep 6
+   ----
+   |..|
+   +@.|
+----..|
+|.....|
+|.....|
+-------
+
+Timestep 7
+   ----
+   |..|
+   -@.|
+----..|
+|.....|
+|.....|
+-------
+
+Timestep 8
+   ----
+   |..|
+   @..|
+----..|
+|.....|
+|.....|
+-------

@@ -106,7 +106,7 @@ def array_to_glyphs(array: Array) -> str:
     return "\n".join(lists)
 
 
-def add_separators(glyphs: str, col_separator: str="<column>", row_separator: str="<row>") -> str:
+def add_separators(glyphs: str, separator: str = " ") -> str:
     """
     Add a separator between each glyph.
 
@@ -124,8 +124,34 @@ def add_separators(glyphs: str, col_separator: str="<column>", row_separator: st
     """
     lines = glyphs.split("\n")
     for i, line in enumerate(lines):
-        lines[i] = col_separator.join(line)
-    glyphs = row_separator.join(lines)
+        lines[i] = separator.join(line)
+        lines[i] += separator
+    glyphs = "\n".join(lines)
+    return glyphs
+
+
+def pad_glyphs(glyphs: str) -> str:
+    """
+    Pad the glyphs with a given amount of padding.
+
+    Parameters
+    ----------
+    glyphs : str
+        The glyphs to pad.
+    pad : int
+        The amount of padding to add.
+
+    Returns
+    -------
+    str
+        The padded glyphs.
+    """
+    lines = glyphs.split("\n")
+    max_len = max(len(line) for line in lines)
+    for i, line in enumerate(lines):
+        if len(line) < max_len:
+            lines[i] = line + " " * (max_len - len(line))
+    glyphs = "\n".join(lines)
     return glyphs
 
 
@@ -145,11 +171,13 @@ if __name__ == "__main__":
 ......`   ........
 ......` .......`
 .................
-............`
-@.............`
+....@.......`
+..............`
 ..................}
 """
-    glyphs = add_separators(glyphs)
+    padded = pad_glyphs(glyphs)
+    replaced = replace_obscured(padded)
+    glyphs = add_separators(replaced)
     print(glyphs)
 
 
@@ -166,3 +194,6 @@ if __name__ == "__main__":
 
     # upscaled_glyphs = array_to_glyphs(upscaled)
     # print("Upscaled glyphs:\n", upscaled_glyphs)
+
+
+

@@ -1,4 +1,15 @@
-jax[cuda12_pip] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# jax[cuda12_pip] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 flax
 transformers
+accelerate
+bitsandbytes
 minihack
+nle
+matplotlib
+wandb
+#llama requirements
+torch==2.0.1
+fairscale
+fire
+sentencepiece
+nle-language-wrapper

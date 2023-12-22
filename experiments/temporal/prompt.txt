@@ -1,0 +1,320 @@
+
+I will present you with a sequence of observations from the gameplay of MiniHack.
+Recall that a single observation in MiniHack has three main parts: a) a *message* appearing on top of the screen; b) a *grid of symbols* showing the positions of entities in the room and c) a *set of statistics* at the bottom of the screen.
+I will present you with a sequence of these.
+
+First, tell me about your knowledge of MiniHack.
+Title this paragraph "Preliminary knowledge".
+
+Write an analysis describing the semantics of each observation strictly using information from the observations and your knowledge of MiniHack.
+Title this paragraph **Observation analysis**.
+
+Then, write an analysis describing the semantics of the sequence of observations focusing on the reasons that could have led to the final observation.
+End this analysis by writing whether the agent should avoid or repeat the action at its next encounter with the same state.
+Recall that the goal of the agent is find the staircase up, denoted by ">" and do not confound that with the staircase down symbol "<".
+Title this paragraph **Reasoning Leading to Final Observation**.
+
+Finally, for each timestep, respond by providing the number of the timestep that you evaluate to be the most significant to reach the final observation.
+Title this paragraph **Action recommendation**.
+
+Synthetise the action recommendation into a dictionary of the form `{"Timestep 0": True}`, writing `True` if you recommend to take same action next time, `False` if you do not recommend and `None` if the action does not matter.
+
+Now begins the sequence of observations:
+
+Timestep 0
+Action: northeast
+
+Hello Agent, welcome to NetHack!  You are a chaotic male human Rogue.
+
+
+
+
+
+
+
+
+                                         --
+                                         .|
+                                        (.|
+                                    ----..|
+                                    |..@..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 1
+Action: northeast
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(.|
+                                    ----@.|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 2
+Action: east
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(@|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 3
+Action: east
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(@|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 4
+Action: south
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(@|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 5
+Action: pickup
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(.|
+                                    ----.@|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 6
+Action: northwest
+
+There is nothing here to pick up.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(.|
+                                    ----.@|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 7
+Action: southwest
+
+You see here a key named The Master Key of Thievery.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +@.|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 8
+Action: apply
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +@.|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 9
+Action: southwest
+
+Never mind.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +@.|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+Timestep 10
+Action:
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +@.|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
