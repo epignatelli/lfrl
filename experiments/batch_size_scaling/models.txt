@@ -1,2 +1,0 @@
-tiiuae/falcon-7b-instruct
-tiiuae/falcon-7b

@@ -9,7 +9,7 @@ from .prompts import PROMPT_INTRINSIC_REWARD, PROMPT_ENV_DESCRIPTION, PROMPT_CRE
 CA_PATTERN = re.compile(r"\{\s*\"timestep-\d\"\s*:\s*\d*.\d*\s*\}", re.IGNORECASE)
 
 
-def request_chat(
+def ask(
     prompts: List[str], *, host: str = "localhost", port: int = 5000
 ) -> List[str]:
     url = "http://{}:{}/chat".format(host, port)
@@ -25,9 +25,9 @@ def request_chat(
     return list(text_batch)
 
 
-def get_env_description(env_name: str) -> str:
+def ask_env_description(env_name: str) -> str:
     prompt = PROMPT_ENV_DESCRIPTION.format(env_name)
-    response = request_chat([prompt]) or ""
+    response = ask([prompt]) or ""
     return response[0]
 
 
@@ -40,7 +40,7 @@ def ask_credit(
 ) -> List[str]:
     prompt = PROMPT_CREDIT_ASSIGNMENT.format(env_description)
     prompts = ["\n\n".join([prompt, obs]) for obs in observations]
-    return request_chat(prompts, host=host, port=port)
+    return ask(prompts, host=host, port=port)
 
 
 def parse_credit(text: str) -> Dict[str, float]:

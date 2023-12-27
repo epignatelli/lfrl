@@ -3,19 +3,28 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
 )
+import requests
 
-DEFAULT_SYSTEM_PROMPT = """\
-Welcome to the MiniHack data collection and evaluation interface.
-This interface is designed to collect data from MiniHack and evaluate the performance of reinforcement learning agents.
-You are a helpful and honest judge of good gameplaying and progress in the NetHack game. Always answer as helpfully as possible, while being truthful.
-If you don't know the answer to a question, please don't share false information."""
+from .prompts import DEFAULT_SYSTEM_PROMPT
 
 
 class LLM:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, template_url: str = ""):
         self.model_name = model_name
+        self.template_url = template_url
+
+    def patch_chat_template(self):
+        if self.template_url == "":
+            print("No patch template url provided, skip patching chat template")
+            return
+        res = requests.get(self.template_url)
+        template = res.content.decode("utf-8")
+        self.chat_template = template
+        self.tokenizer.chat_template = template
+        print(f"Patch chat template for Falcon7B with template.")
 
     def init(self, **kwargs):
+        print("o-----------------------------")
         print(f"Loading {self.model_name}...")
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
@@ -27,6 +36,7 @@ class LLM:
         )
         self.tokenizer = tokenizer
         self.model = model
+        self.patch_chat_template()
         print(f"{self.model_name} loaded")
 
     def forward(
@@ -61,27 +71,39 @@ class LLM:
 
 class Llama7B(LLM):
     def __init__(self):
-        super().__init__("meta-llama/Llama-7B-chat-hf")
+        super().__init__("meta-llama/Llama-2-7b-chat-hf")
 
 
 class Llama13B(LLM):
     def __init__(self):
-        super().__init__("meta-llama/Llama-13B-chat-hf")
+        super().__init__("meta-llama/Llama-2-13b-chat-hf")
 
 
 class Llama70B(LLM):
     def __init__(self):
-        super().__init__("meta-llama/Llama-70B-chat-hf")
+        super().__init__("meta-llama/Llama-2-70b-chat-hf")
 
 
 class Mistral7B(LLM):
     def __init__(self):
-        super().__init__("mistralai/Mistral-7B-Instruct-v0.1")
+        super().__init__(
+            "mistralai/Mistral-7B-Instruct-v0.1",
+            "https://raw.githubusercontent.com/chujiezheng/chat_templates/main/chat_templates/mistral.jinja",
+        )
+
+class OpenOrcaMistral7B(LLM):
+    def __init__(self):
+        super().__init__(
+            "Open-Orca/Mistral-7B-OpenOrca",
+        )
 
 
 class Falcon7B(LLM):
     def __init__(self):
-        super().__init__("tiiuae/falcon-7b-instruct")
+        super().__init__(
+            "tiiuae/falcon-7b-instruct",
+            "https://raw.githubusercontent.com/chujiezheng/chat_templates/main/chat_templates/falcon.jinja",
+        )
 
 
 class Fuyu8B(LLM):
