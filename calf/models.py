@@ -15,16 +15,16 @@ class LLM:
 
     def patch_chat_template(self):
         if self.template_url == "":
-            print("No patch template url provided, skip patching chat template")
+            print("No patch template url provided, skipping chat template patch")
             return
         res = requests.get(self.template_url)
         template = res.content.decode("utf-8")
         self.chat_template = template
         self.tokenizer.chat_template = template
-        print(f"Patch chat template for Falcon7B with template.")
+        print(f"Patch chat template for {self.model_name} with template:\n {template}.")
 
     def init(self, **kwargs):
-        print("o-----------------------------")
+        print("o" + "-" * 79)
         print(f"Loading {self.model_name}...")
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
