@@ -7,7 +7,7 @@ Uses sockets to communicate between the server and the clients."""
 import json
 import time
 from flask import Flask, jsonify, request
-from .models import LLM
+from ..models import LLM
 
 
 

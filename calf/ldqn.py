@@ -93,7 +93,7 @@ class LDQN(DQN):
         )
         observations = transitions
 
-        rewards = ask_intrinsic_reward(transitions.observations)
+        rewards = ask_credit(transitions.observations, "")
 
         return train_state
 
