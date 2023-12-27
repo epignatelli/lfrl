@@ -6,9 +6,11 @@ Uses sockets to communicate between the server and the clients."""
 
 import json
 import time
+from typing import Dict, List
+import uuid
 from flask import Flask, jsonify, request
-from ..models import LLM
-
+from calf.models import OpenOrcaMistral7B, Roles, Parrot
+from calf.prompts import DEFAULT_SYSTEM_PROMPT
 
 
 class LLMServer:
@@ -16,72 +18,82 @@ class LLMServer:
         self,
         host: str = "localhost",
         port: int = 5000,
-        model_name: str = "adept/fuyu-8b",
+        system_prompt: str = DEFAULT_SYSTEM_PROMPT,
     ):
         self.host = host
         self.port = port
 
         # init server
         self.app = Flask(__name__)
-        self.app.route("/chat", methods=["GET"])(self.chat)
+        self.app.route("/respond", methods=["POST"])(self.respond)
 
         # init LLM
-        self.llm = LLM(model_name)
+        self.llm = OpenOrcaMistral7B()
+        self.busy = False
+
+        # init conversation registry
+        self.system_prompt = ""
+        self.conversations_registry: Dict[str, List[Dict[str, str]]] = {}
 
     def start(self):
         self.llm.init()
         return self.app.run(host=self.host, port=self.port, debug=True)
 
-    def chat(self):
-        start_time = time.time()
-        # get the prompt from the request
-        prompt = json.loads(request.data)
+    def respond(self):
+        # set red light
+        self.busy = True
 
-        # prompt the LLM
-        response = self.llm.forward(prompt)
-
-        # return the response
-        response = jsonify(response)
-        response_time = time.time() - start_time
-        response.headers["X-Response-Time"] = str(response_time)
-        print(f"Response time: {response_time:.4f}s")
-        return response
-
-
-class InteractiveChatServer(LLMServer):
-    def chat(self):
-        start_time = time.time()
         # get the prompt from the request
         prompt = request.data.decode()
-        print("> ", prompt)
+        conv_id = request.args.get("conv_id")
+        print(f"Received prompt: {prompt} for conversation ID: {conv_id}")
 
-        # return empty response if no prompt
-        if prompt is None:
-            return jsonify({})
+        if conv_id is None:
+            conv_id = str(uuid.uuid4())
 
-        # parse the inference parameters
-        temperature = request.args.get("temperature", 0.9)
-        top_p = request.args.get("top_p", 0.9)
-        temperature = float(temperature)
-        top_p = float(top_p)
+        # new conversation
+        if conv_id not in self.conversations_registry:
+            self.conversations_registry[conv_id] = [
+                {"role": Roles.SYSTEM, "content": self.system_prompt},
+                {"role": Roles.USER, "content": prompt},
+            ]
+        # existing conversation
+        else:
+            self.conversations_registry[conv_id].append(
+                {"role": Roles.ASSISTANT, "content": prompt}
+            )
 
         # prompt the LLM
-        prompt = prompt
-        response = self.llm.forward(prompt)
-        print("\t>", response[0])
-
-        # check for a valid response
-        if response is None:
-            return jsonify({})
-
-        # return the response
-        response = jsonify(response)
+        conversation = self.conversations_registry[conv_id]
+        start_time = time.time()
+        response = self.llm.chat(conversation)
         response_time = time.time() - start_time
-        response.headers["X-Response-Time"] = str(response_time)
         print(f"Response time: {response_time:.4f}s")
+        print(f"{len(self.conversations_registry)} conversations in registry with IDs: {list(self.conversations_registry.keys())}")
+
+        # update registry
+        self.conversations_registry[conv_id].append(
+            {"role": "assistant", "content": response[0]}
+        )
+
+        # format the response
+        response = jsonify(response)
+        response.headers["X-Response-Time"] = str(response_time)
+
+        # set green light
+        self.busy = False
+
         return response
+
+
+# class InteractiveChatServer(LLMServer):
+#     def respond(self):
+#         response = super().respond()
+#         response_time = float(response.headers["X-Response-Time"])
+#         print(f"Response time: {response_time:.4f}s")
+#         return response
 
 
 if __name__ == "__main__":
-    server = InteractiveChatServer()
+    server = LLMServer()
     server.start()

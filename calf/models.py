@@ -1,3 +1,4 @@
+from typing import List, Dict
 import torch
 from transformers import (
     AutoModelForCausalLM,
@@ -6,6 +7,12 @@ from transformers import (
 import requests
 
 from .prompts import DEFAULT_SYSTEM_PROMPT
+
+
+class Roles:
+    USER: str = "user"
+    SYSTEM: str = "system"
+    ASSISTANT: str = "assistant"
 
 
 class LLM:
@@ -39,14 +46,8 @@ class LLM:
         self.patch_chat_template()
         print(f"{self.model_name} loaded")
 
-    def forward(
-        self, prompt: str, system_prompt: str = DEFAULT_SYSTEM_PROMPT, **kwargs
-    ) -> str:
+    def chat(self, conversation: List[Dict[str, str]], **kwargs):
         with torch.no_grad():
-            conversation = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ]
             encoding = self.tokenizer.apply_chat_template(
                 conversation,
                 tokenize=True,
@@ -66,7 +67,16 @@ class LLM:
                 generated_tokens,
                 skip_special_tokens=True,
             )
-            return generated_text[0]
+            return generated_text
+
+    def forward(
+        self, prompt: str, system_prompt: str = DEFAULT_SYSTEM_PROMPT, **kwargs
+    ) -> List[str]:
+        conversation = [
+            {"role": Roles.SYSTEM, "content": system_prompt},
+            {"role": Roles.USER, "content": prompt},
+        ]
+        return self.chat(conversation, **kwargs)
 
 
 class Llama7B(LLM):
@@ -109,3 +119,16 @@ class Falcon7B(LLM):
 class Fuyu8B(LLM):
     def __init__(self):
         super().__init__("adept/fuyu-8b")
+
+
+class Parrot(LLM):
+    def __init__(self):
+        self.model_name = "Parrot"
+
+    def init(self, **kwargs):
+        print("o" + "-" * 79)
+        print(f"Loading {self.model_name}...")
+        print(f"{self.model_name} loaded")
+
+    def chat(self, conversation: List[Dict[str, str]], **kwargs):
+        return [conversation[-1]["content"]]
