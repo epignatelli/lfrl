@@ -1,10 +1,9 @@
 """Provides a Large Language Model as a Service (LLMaaS).
 Uses sockets to communicate between the server and the clients."""
-
-
 import uuid
 import requests
 from simple_term_menu import TerminalMenu
+
 
 WELCOME_MESSAGE = """
 Welcome to the Large Language Model as a Service (LLMaaS)!

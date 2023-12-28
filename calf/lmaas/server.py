@@ -1,10 +1,5 @@
-#!/usr/bin/env python
-# encoding: utf-8
 """Provides a Large Language Model as a Service (LLMaaS).
 Uses sockets to communicate between the server and the clients."""
-
-
-import os
 import time
 from typing import Dict, List
 from flask import Flask, jsonify, request

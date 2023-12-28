@@ -3,8 +3,8 @@ from . import (
     prompts,
     questions,
     buffer,
-    aas,
+    lmaas,
     # ldqn,
 )
 
-from .aas import server, client
+from .lmaas import server, client
