@@ -46,8 +46,15 @@ class LLM:
         self.patch_chat_template()
         print(f"{self.model_name} loaded")
 
-    def chat(self, conversation: List[Dict[str, str]], **kwargs):
+    def chat(
+        self,
+        conversation: List[Dict[str, str]],
+        *,
+        append_prompt: bool = False,
+        **kwargs,
+    ):
         with torch.no_grad():
+            # encode text to tokens
             encoding = self.tokenizer.apply_chat_template(
                 conversation,
                 tokenize=True,
@@ -56,6 +63,7 @@ class LLM:
             ).to(  # type: ignore
                 self.model.device
             )
+            # prompt the model
             max_new_tokens = kwargs.pop("max_new_tokens", 256)
             generated_tokens = self.model.generate(
                 encoding,
@@ -63,6 +71,10 @@ class LLM:
                 max_new_tokens=max_new_tokens,
                 **kwargs,
             )
+            # get only the new tokens
+            if not append_prompt:
+                generated_tokens = generated_tokens[:, encoding.shape[-1] :]
+            # decode the tokens to text
             generated_text = self.tokenizer.batch_decode(
                 generated_tokens,
                 skip_special_tokens=True,
@@ -100,6 +112,7 @@ class Mistral7B(LLM):
             "mistralai/Mistral-7B-Instruct-v0.1",
             "https://raw.githubusercontent.com/chujiezheng/chat_templates/main/chat_templates/mistral.jinja",
         )
+
 
 class OpenOrcaMistral7B(LLM):
     def __init__(self):

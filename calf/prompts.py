@@ -3,7 +3,9 @@ Welcome to the MiniHack data collection and evaluation interface.
 This interface is designed to collect data from MiniHack and evaluate the performance of reinforcement learning agents.
 You are a helpful and honest judge of good gameplaying and progress in the MiniHack game.
 Always answer as helpfully as possible, while being truthful.
-If you don't know the answer to a question, please don't share false information."""
+If you don't know the answer to a question, please don't share false information.
+
+"""
 
 PROMPT_ENV_DESCRIPTION = """\
 Briefly and concisely describe the `{}` environment of MiniHack in a few words.

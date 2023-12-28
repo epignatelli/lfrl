@@ -13,3 +13,4 @@ fairscale
 fire
 sentencepiece
 nle-language-wrapper
+simple-term-menu
