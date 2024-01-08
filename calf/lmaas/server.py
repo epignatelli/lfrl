@@ -38,6 +38,7 @@ class LLMServer:
         # get the prompt from the request
         prompt = request.data.decode()
         conv_id = request.args.get("conv_id")
+        max_ner_tokens = request.args.get("max_ner_tokens", 256)
         print(f"Received prompt: {prompt} for conversation ID: {conv_id}")
 
         conversation = [
@@ -57,7 +58,7 @@ class LLMServer:
 
         # prompt the LLM
         start_time = time.time()
-        response = self.llm.chat(conversation)
+        response = self.llm.chat(conversation, max_new_tokens=max_ner_tokens)
         response_time = time.time() - start_time
         print(f"Response time: {response_time:.4f}s")
         print(

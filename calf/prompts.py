@@ -48,6 +48,33 @@ The sum of all scores must be 1.0.
 We aim to find those unique actions that are crucial to the point that without them, the agent would not be able to reach the goal.
 """
 
+PROMPT_CREDIT_ASSIGNMENT = """\
+I will present you with a sequence of observations and actions from the gameplay of MiniHack.
+Recall that a single observation in MiniHack has four main parts:
+a) The number of the timestep and the last action;
+b) a *message* appearing on top of the screen;
+c) a *grid of symbols* showing the positions of entities in the room and
+d) a *set of statistics* at the bottom of the screen.
+
+The actions available to the agent at each timestep are the following:
+- "North": the agent moves north
+- "East": the agent moves east
+- "South": the agent moves south
+- "West": the agent moves west
+- "Pickup": the agent picks up an item
+- "Drop": the agent drops an item
+- "Search": the agent interacts with the item in front of it
+
+Your objective is two-fold:
+1. To identify the actions in the trajecotry that are crucial to reach the goal.
+2. To evaluate counterfactuals actions: if the agent had taken a different action at a given timestep, would it have reached the goal?
+
+To do this, you will write a score for each action that describes the contribution (influence) of that action to reach the final observation.
+Had that action changed, would the agent have reached the goal?
+For example, if a different action also would have led to the same observation at the next timestep, then the score of the action is 0.0.
+You can choose any score between 0.0 and 1.0, writing {"timestep-t": X}, where t is the timestep of the action and X is the score you choose.
+The sum of all scores must be 1.0.
+"""
 
 
 # PROMPT_INTRO = """\
