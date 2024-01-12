@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Generic, List, Tuple, TypeVar
+from typing import Generic,TypeVar
 from flax import struct
 
 import jax
@@ -25,7 +25,7 @@ class RingBuffer(struct.PyTreeNode, Generic[T]):
 
     @classmethod
     def create(cls, element: T, capacity: int, n_steps: int=1) -> RingBuffer:
-        """Constructs a CircularBuffer class."""
+        """Constructs a RingBuffer class."""
         # reserve memory
         uninitialised_elements = jax.tree_map(
             lambda x: jnp.broadcast_to(
@@ -44,7 +44,7 @@ class RingBuffer(struct.PyTreeNode, Generic[T]):
         """Returns the number of elements currently stored in the buffer."""
         return self.idx
 
-    def add(self, item: Any) -> RingBuffer:
+    def add(self, item: T) -> RingBuffer:
         """Adds a single element to the buffer. If the buffer is full,
         the oldest element is overwritten."""
         idx = self.idx % self.capacity
@@ -54,7 +54,7 @@ class RingBuffer(struct.PyTreeNode, Generic[T]):
             elements=elements,
         )
 
-    def sample(self, key: KeyArray, n: int = 1) -> Any:
+    def sample(self, key: KeyArray, n: int = 1) -> T:
         """Samples `n` elements uniformly at random from the buffer,
         and stacks them into a single pytree.
         If `n` is greater than state.idx,
@@ -62,4 +62,3 @@ class RingBuffer(struct.PyTreeNode, Generic[T]):
         indices = jax.random.randint(key=key, shape=(n,), minval=0, maxval=self.idx)
         items = jax.tree_map(lambda x: x[indices], self.elements)
         return items
-

@@ -32,13 +32,13 @@ class LLMServer:
 
     def start(self):
         self.llm.init()
-        return self.app.run(host=self.host, port=self.port, debug=True)
+        return self.app.run(host=self.host, port=self.port, debug=False)
 
     def respond(self):
         # get the prompt from the request
         prompt = request.data.decode()
         conv_id = request.args.get("conv_id")
-        max_ner_tokens = request.args.get("max_ner_tokens", 256)
+        max_new_tokens = int(request.args.get("max_new_tokens", 256))
         print(f"Received prompt: {prompt} for conversation ID: {conv_id}")
 
         conversation = [
@@ -58,7 +58,7 @@ class LLMServer:
 
         # prompt the LLM
         start_time = time.time()
-        response = self.llm.chat(conversation, max_new_tokens=max_ner_tokens)
+        response = self.llm.chat(conversation, max_new_tokens=max_new_tokens)
         response_time = time.time() - start_time
         print(f"Response time: {response_time:.4f}s")
         print(

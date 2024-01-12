@@ -1,7 +1,24 @@
 from nle.nethack import actions as nethack_actions
+import nle
 
 
-all_nle_action_map = {
+SYMSET = {
+    "-": "open door (in vertical wall)",
+    "|": "open door (in horizontal wall)",
+    "<space>": "dark part of a room or solid rock",
+    ".": "doorway (with no or broken door)",
+    "+": "closed door (in vertical wall)",
+    ">": "staircase down",
+    "<": "staircase up",
+}
+
+
+def get_sym_desc(sym: str) -> str:
+    ...
+
+
+ACTIONS_MAP = {
+    None: ["none", ""],
     nethack_actions.UnsafeActions.HELP: ["help", "?"],
     nethack_actions.UnsafeActions.PREVMSG: ["previous message", "^p"],
     nethack_actions.CompassDirection.N: ["north", "k"],
