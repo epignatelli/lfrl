@@ -1,0 +1,492 @@
+Timestep 0
+Action: north
+Reward: 0.0
+
+Be careful!  New moon tonight.                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.@|                                     
+                                       +.(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                       ...|                                     
+                                      -----                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 1
+Action: south
+Reward: -0.01
+
+It's a wall.                                                                    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.@|                                     
+                                       +.(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                       ...|                                     
+                                      -----                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 2
+Action: east
+Reward: 0.0
+
+You see here a key named The Master Key of Thievery.                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +.@|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 3
+Action: west
+Reward: -0.01
+
+It's a wall.                                                                    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +.@|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 4
+Action: pickup
+Reward: 0.0
+
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 5
+Action: apply
+Reward: -0.01
+
+There is nothing here to pick up.                                               
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 6
+Action: east
+Reward: -0.01
+
+Never mind.                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 7
+Action: west
+Reward: 0.0
+
+You see here a key named The Master Key of Thievery.                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +.@|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 8
+Action: pickup
+Reward: 0.0
+
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 9
+Action: north
+Reward: -0.01
+
+There is nothing here to pick up.                                               
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 10
+Action: north
+Reward: 0.0
+
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |@<|                                     
+                                       +.(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 11
+Action: south
+Reward: -0.01
+
+It's a wall.                                                                    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |@<|                                     
+                                       +.(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 12
+Action: west
+Reward: 0.0
+
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 13
+Action: pickup
+Reward: -0.01
+
+This door is locked.                                                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 14
+Action: apply
+Reward: -0.01
+
+There is nothing here to pick up.                                               
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 15
+Action: east
+Reward: -0.01
+
+Never mind.                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +@(|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
+
+Timestep 15
+Action: 
+Reward: 0.0
+
+You see here a key named The Master Key of Thievery.                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                       ----                                     
+                                       |.<|                                     
+                                       +.@|                                     
+                                       -..|                                     
+                                       ...|                                     
+                                     .....|                                     
+                                    -------                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0    
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0                                        
