@@ -1,5 +1,123 @@
+from __future__ import annotations
+from typing import Tuple
+
+import numpy as np
+import gym
+import gym.spaces
+import gym.wrappers
+import gym.vector
+from gym.utils.step_api_compatibility import (
+    TerminatedTruncatedStepType as GymTimestep,
+    DoneStepType,
+    convert_to_terminated_truncated_step_api,
+)
+import gym.core
 from nle.nethack import actions as nethack_actions
-import nle
+from minihack import MiniHack
+
+import jax
+from jax import Array
+from jax.random import KeyArray
+import jax.numpy as jnp
+import jax.tree_util as jtu
+from helx.base.mdp import Timestep, StepType
+from helx.envs.gym import GymWrapper
+from helx.base.spaces import Space, Discrete, Continuous
+
+
+class UndictWrapper(gym.core.ObservationWrapper):
+    def __init__(self, env: gym.Env, key: str):
+        super().__init__(env)
+        assert isinstance(env.observation_space, gym.spaces.Dict)
+        self.key = key
+        self.observation_space = self.observation_space[key]  # type: ignore
+
+    def observation(self, obs):
+        return obs[self.key]
+
+
+class MiniHackWrapper(GymWrapper):
+    def reset(self, key: KeyArray) -> Timestep:
+        # get num envs
+        num_envs = getattr(self.env, "num_envs", 1)
+        # compute new timestep
+        seeds = jax.random.randint(key, shape=(num_envs,), minval=0, maxval=1_000_000)
+        seeds = np.array(seeds)
+        obs, info = self.env.reset(seed=seeds)  # type: ignore
+        # placeholder for missing info
+        rewards = np.zeros((num_envs,))
+        dones = np.asarray([False] * num_envs)
+        timestep = (obs, rewards, dones, info)
+        # add additional info for helx
+        t = jnp.zeros((num_envs,))
+        action = jnp.zeros((num_envs,)) - 1
+        timestep = self._wrap_timestep(timestep, action=action, t=t)
+        return timestep
+
+    def _step(self, key: KeyArray, timestep: Timestep, action: Array) -> Timestep:
+        next_timestep = self.env.step(np.asarray(action))
+        next_timestep = self._wrap_timestep(next_timestep, action, timestep.t + 1)
+        return next_timestep
+
+    @classmethod
+    def wraps(cls, env: gym.Env) -> GymWrapper:
+        helx_env = cls(
+            env=env,
+            observation_space=cls._wrap_space(env.observation_space),
+            action_space=cls._wrap_space(env.action_space),
+            reward_space=Continuous(
+                minimum=env.reward_range[0],  # type: ignore
+                maximum=env.reward_range[1] // 100,  # type: ignore
+            ),
+        )
+        return helx_env
+
+    @classmethod
+    def _wrap_space(cls, gym_space: gym.spaces.Space) -> Space:
+        if isinstance(gym_space, gym.spaces.Discrete):
+            return Discrete(gym_space.n)
+        elif isinstance(gym_space, gym.spaces.Box):
+            return Continuous(
+                shape=gym_space.shape,
+                minimum=gym_space.low.min().item(),
+                maximum=gym_space.high.max().item(),
+            )
+        elif isinstance(gym_space, gym.spaces.MultiDiscrete):
+            # gym.vector.VectorEnv returns MultiDiscrete
+            upper = np.array(gym_space.nvec)
+            assert np.sum(upper - upper) <= np.array(0)
+            return Discrete(upper[0], shape=gym_space.shape)
+        else:
+            raise NotImplementedError(
+                "Cannot convert dm_env space of type {}".format(type(gym_space))
+            )
+
+    def _wrap_timestep(
+        self, gym_step: GymTimestep | DoneStepType, action: Array, t: Array
+    ) -> Timestep:
+        is_vector_env = hasattr(self.env, "num_envs") or isinstance(
+            self.env, gym.vector.VectorEnv
+        )
+        gym_step = convert_to_terminated_truncated_step_api(gym_step, is_vector_env)
+        obs, reward, terminated, truncated, info = gym_step
+
+        step_type = jnp.asarray(
+            [StepType.TRANSITION, StepType.TERMINATION, StepType.TRUNCATION]
+        )[terminated + truncated * 2]
+
+        obs = jtu.tree_map(lambda x: jnp.asarray(x, self.observation_space.dtype), obs)
+        reward = jnp.asarray(reward, dtype=self.reward_space.dtype)
+        action = jnp.asarray(action, dtype=self.action_space.dtype)
+        info = {}
+        return Timestep(
+            observation=obs,
+            reward=reward,
+            step_type=step_type,
+            action=action,
+            t=t,
+            state=None,
+            info=info,
+        )
 
 
 SYMSET = {
