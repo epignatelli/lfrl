@@ -75,7 +75,7 @@ def main():
 
     # run experiment
     wandb.init(mode="disabled")
-    log = {}
+    iteration = 0
     for _ in range(args.max_episodes):
         k1, k2, key = jax.random.split(key, num=3)
         experience = agent.collect_experience(env, key=k1)
@@ -83,7 +83,8 @@ def main():
 
         # inject iteration into log
         timestep_elapsed = jnp.prod(jnp.asarray(experience.t.shape))
-        log["iteration"] = log.get("iteration", jnp.asarray(0)) + timestep_elapsed
+        iteration += timestep_elapsed
+        log["iteration"] = iteration
         print(log)
         wandb.log(log)
 

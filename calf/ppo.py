@@ -34,7 +34,7 @@ class HParams(struct.PyTreeNode):
     """The epsilon parameter in the PPO paper."""
     clip_ratio: float = 0.2
     """The number of actors to use."""
-    n_actors: int = 8
+    n_actors: int = 16
     """The number of epochs to train for each update."""
     n_epochs: int = 4
     """The number of steps to collect in total from all environments at update."""
@@ -224,7 +224,7 @@ class PPO(struct.PyTreeNode):
         }
         return loss, log
 
-    # @jax.jit
+    @jax.jit
     def update(
         self, trajectories: Timestep, *, key: KeyArray
     ) -> Tuple[PPO, Dict[str, Array]]:
