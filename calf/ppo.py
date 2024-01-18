@@ -20,36 +20,24 @@ from helx.envs.environment import Environment
 
 
 class HParams(struct.PyTreeNode):
-    # rl
     discount: float = 0.99
-    n_steps: int = 10
+    """The MDP discount factor."""
     lambda_: float = 0.9
-    # sgd
+    """The lambda parameter for the TD(lambda) algorithm."""
     learning_rate: float = 0.00025
-    # buffer
-    buffer_capacity: int = 100_000
-    # ppo
-    """Entropy bonus coefficient."""
+    """The learning rate of the gradient descent algorithm."""
     beta: float = 0.01
-    """The epsilon parameter in the PPO paper."""
+    """Entropy bonus coefficient."""
     clip_ratio: float = 0.2
+    """The epsilon parameter in the PPO paper."""
+    n_actors: int = 1
     """The number of actors to use."""
-    n_actors: int = 16
+    n_epochs: int = 10
     """The number of epochs to train for each update."""
-    n_epochs: int = 4
+    iteratione_size: int = 1024
     """The number of steps to collect in total from all environments at update."""
-    iteratione_size: int = 256
+    batch_size: int = 256
     """The number of minibatches to run at each epoch."""
-    batch_size: int = 4
-
-
-class Log(struct.PyTreeNode):
-    critic_loss: Array = jnp.array(0.0)
-    actor_loss: Array = jnp.array(0.0)
-    loss: Array = jnp.array(0.0)
-    actor_entropy: Array = jnp.array(0.0)
-    returns: Array = jnp.array(0.0)
-    iteration: Array = jnp.array(0)
 
 
 class PPO(struct.PyTreeNode):
@@ -83,8 +71,12 @@ class PPO(struct.PyTreeNode):
         # we do not check for the number of actors here, and we assume that the
         # environment is batched, such that `env.step` returns `n_actors` timesteps
         # assert env.n_parallel == hparams.n_actors
-        actor = nn.Sequential([backbone, nn.Dense(env.action_space.maximum + 1)])
-        critic = nn.Sequential([backbone, nn.Dense(env.action_space.maximum + 1)])
+        actor = nn.Sequential(
+            [backbone.clone(), nn.Dense(env.action_space.maximum + 1)]
+        )
+        critic = nn.Sequential(
+            [backbone.clone(), nn.Dense(env.action_space.maximum + 1)]
+        )
         unbatched_obs_sample = env.observation_space.sample(key)[0]
         params_actor = actor.init(key, unbatched_obs_sample)
         params_critic = critic.init(key, unbatched_obs_sample)
@@ -101,12 +93,14 @@ class PPO(struct.PyTreeNode):
 
     def policy(self, params: Params, observation: Array) -> distrax.Distribution:
         logits = jnp.asarray(self.actor.apply(params["actor"], observation))
-        return distrax.Categorical(logits=logits)
+        return distrax.Softmax(logits=logits)
 
     def value_fn(self, params: Params, observation: Array) -> Array:
         return jnp.asarray(self.critic.apply(params["critic"], observation))
 
-    def collect_experience(self, env: Environment, *, key: KeyArray) -> Timestep:
+    def collect_experience(
+        self, env: Environment, timestep: Timestep, *, key: KeyArray
+    ) -> Tuple[Timestep, Timestep]:
         """Collects `n_actors` trajectories of experience of length `n_steps`
         from the environment. This method is the only one that interacts with the
         environment, and cannot be jitted unless the environment is JAX-compatible.
@@ -123,28 +117,31 @@ class PPO(struct.PyTreeNode):
         @jax.jit
         def batch_policy(params, observation, key):
             action_distribution = jax.vmap(self.policy, in_axes=(None, 0))(
-                self.params, timestep.observation
+                params, observation
             )
             action, log_prob = action_distribution.sample_and_log_prob(
                 seed=key, sample_shape=env.action_space.shape[1:]
             )
             return action, log_prob
 
-        timestep = env.reset(key)  # this is a batch of timesteps of t=0
+        # collect trajectories
         episode_length = self.hparams.iteratione_size // self.hparams.n_actors
-        action, log_prob = batch_policy(self.params, timestep.observation, key)
-        timestep.info["log_prob"] = log_prob
-        episodes = [timestep]
-        for t in range(episode_length - 1):
-            k1, key = jax.random.split(key)
-            timestep = env.step(key, timestep, action)  # potentiall jax-incompat
+        episodes = []
+        for t in range(episode_length):
+            k1, k2, key = jax.random.split(key, num=3)
             action, log_prob = batch_policy(self.params, timestep.observation, k1)
             timestep.info["log_prob"] = log_prob
             episodes.append(timestep)
+            timestep = env.step(k2, timestep, action)
         # first axis is the number of actors, second axis is time
-        return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episodes)
+        trajectories = jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episodes)
 
-    def sample_experience(self, episodes: Timestep, *, key: KeyArray) -> Timestep:
+        # update current return
+        return trajectories, timestep
+
+    def sample_experience(
+        self, episodes: Timestep, timestep: Timestep, *, key: KeyArray
+    ) -> Timestep:
         """Samples a minibatch of transitions from the collected experience using
         the "Shuffle transitions (recompute advantages)" method from
         https://arxiv.org/pdf/2006.05990.pdf
@@ -162,7 +159,7 @@ class PPO(struct.PyTreeNode):
         )
         assert episodes.t.ndim == 2, msg
         batch_size = self.hparams.batch_size
-        episode_length = self.hparams.iteratione_size // self.hparams.n_actors
+        episode_length = episodes.t.shape[1]
         # compute the advantage for each timestep
         action_values = jax.vmap(
             jax.vmap(self.value_fn, in_axes=(None, 0)), in_axes=(None, 0)
@@ -173,8 +170,8 @@ class PPO(struct.PyTreeNode):
         advantages = jax.vmap(
             rlax.truncated_generalized_advantage_estimation, in_axes=(0, 0, None, 0)
         )(
-            episodes.reward[:, 1:],
-            self.hparams.discount ** episodes.t[:, 1:],
+            episodes.reward[:, :-1],
+            self.hparams.discount ** episodes.t[:, :-1],
             self.hparams.lambda_,
             values,
         )
@@ -183,8 +180,9 @@ class PPO(struct.PyTreeNode):
         actor_idx = jax.random.randint(
             key, shape=(batch_size,), minval=0, maxval=self.hparams.n_actors
         )
+        # exclude last timestep (-1) as it was excluded from the advantage computation
         time_idx = jax.random.randint(
-            key, shape=(batch_size,), minval=0, maxval=episode_length
+            key, shape=(batch_size,), minval=0, maxval=episode_length - 1
         )
         transitions = episodes[actor_idx, time_idx]  # (batch_size,)
         return transitions
@@ -209,24 +207,27 @@ class PPO(struct.PyTreeNode):
         clipped_ratio = jnp.clip(
             ratio, 1 - self.hparams.clip_ratio, 1 + self.hparams.clip_ratio
         )
-        actor_loss = -jnp.minimum(ratio * advantage, clipped_ratio * advantage)
+        actor_loss = jnp.minimum(ratio * advantage, clipped_ratio * advantage)
+        actor_loss = -actor_loss  #  maximise
         # entropy
         entropy = jax.lax.stop_gradient(action_distribution.entropy())
-        entropy_bonus = - jnp.asarray(self.hparams.beta) * entropy
+        entropy_loss = jnp.asarray(entropy) * jnp.asarray(self.hparams.beta)
+        entropy_loss = -entropy_loss  #  maximise
         # total loss
-        loss = actor_loss + entropy_bonus + critic_loss
+        loss = actor_loss + critic_loss + entropy_loss
         # logs
         log = {
-            "loss": loss,
-            "critic_loss": critic_loss,
-            "actor_loss": actor_loss,
-            "entropy": entropy,
+            "losses/loss": loss,
+            "losses/critic_loss": critic_loss,
+            "losses/actor_loss": actor_loss,
+            "losses/entropy_bonus": entropy_loss,
+            "policy/entropy": entropy,
         }
         return loss, log
 
     @jax.jit
     def update(
-        self, trajectories: Timestep, *, key: KeyArray
+        self, trajectories: Timestep, timestep: Timestep, *, key: KeyArray
     ) -> Tuple[PPO, Dict[str, Array]]:
         def batch_loss(params, transitions):
             out = jax.vmap(self.loss, in_axes=(None, 0))(params, transitions)
@@ -235,10 +236,11 @@ class PPO(struct.PyTreeNode):
 
         params, opt_state, log = self.params, self.opt_state, {}
         for _ in range(self.hparams.n_epochs):
-            transitions = self.sample_experience(trajectories, key=key)
+            transitions = self.sample_experience(trajectories, timestep, key=key)
             (_, log), grads = jax.value_and_grad(batch_loss, has_aux=True)(
                 params, transitions
             )
             updates, opt_state = self.optimiser.update(grads, opt_state)
             params = optax.apply_updates(params, updates)
+            log["grads/grad_norm"] = optax.global_norm(updates)
         return self.replace(params=params, opt_state=opt_state), log

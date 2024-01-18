@@ -1,5 +1,6 @@
 import argparse
 
+from dataclasses import asdict
 import gym
 import gym.vector
 import minihack
@@ -24,8 +25,36 @@ argparser.add_argument("--num_envs", type=int, default=3)
 argparser.add_argument("--num_epochs", type=int, default=4)
 argparser.add_argument("--num_minibatches", type=int, default=4)
 argparser.add_argument("--num_steps", type=int, default=1)
-argparser.add_argument("--max_episodes", type=int, default=10000)
+argparser.add_argument("--budget", type=int, default=100_000)
+argparser.add_argument("--discount", type=float, default=1.0)
+argparser.add_argument("--lambda_", type=float, default=1.0)
 args = argparser.parse_args()
+
+
+
+def run_experiment(agent, env, budget, key, **kwargs):
+    config = {**asdict(agent.hparams), **kwargs}
+    wandb.init(project="calf", config=config)
+    iteration = 0
+    timestep = env.reset(key)
+    while True:
+        # step
+        k1, k2, key = jax.random.split(key, num=3)
+        experience, timestep = agent.collect_experience(env, timestep, key=k1)
+        agent, log = agent.update(experience, key=k2)
+
+        # log
+        iteration += experience.t.size
+        log["iteration"] = iteration
+        log["reward/average_reward"] = jnp.mean(experience.reward)
+        log["reward/min_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
+        log["reward/max_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
+        log["reward/average_episode_length"] = jnp.mean(jnp.max(experience.t, axis=-1))
+        print(log)
+        wandb.log(log)
+
+        if iteration > budget:
+            break
 
 
 def main():
@@ -35,6 +64,8 @@ def main():
         n_actors=args.num_envs,
         n_epochs=args.num_epochs,
         batch_size=args.num_minibatches,
+        discount=args.discount,
+        lambda_=args.lambda_,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -72,21 +103,30 @@ def main():
     )
     key = jax.random.PRNGKey(args.seed)
     agent = PPO.init(env, hparams, optimiser, network, key=key)
+    budget = args.budget
 
     # run experiment
-    wandb.init(mode="disabled")
+    config = {**asdict(agent.hparams), **args.__dict__}
+    wandb.init(project="calf", config=config)
     iteration = 0
-    for _ in range(args.max_episodes):
+    timestep = env.reset(key)
+    while True:
+        # step
         k1, k2, key = jax.random.split(key, num=3)
-        experience = agent.collect_experience(env, key=k1)
-        agent, log = agent.update(experience, key=k2)
+        experience, timestep = agent.collect_experience(env, timestep, key=k1)
+        agent, log = agent.update(experience, timestep, key=k2)
 
-        # inject iteration into log
-        timestep_elapsed = jnp.prod(jnp.asarray(experience.t.shape))
-        iteration += timestep_elapsed
+        # log
+        iteration += experience.t.size
         log["iteration"] = iteration
+        log["reward/average_reward"] = jnp.mean(experience.reward)
+        log["reward/min_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
+        log["reward/max_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
+        log["reward/average_episode_length"] = jnp.mean(jnp.max(experience.t, axis=-1))
         print(log)
         wandb.log(log)
+        if iteration > budget:
+            break
 
 
 if __name__ == "__main__":

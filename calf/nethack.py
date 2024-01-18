@@ -60,7 +60,7 @@ class MiniHackWrapper(GymWrapper):
         return next_timestep
 
     @classmethod
-    def wraps(cls, env: gym.Env) -> GymWrapper:
+    def wraps(cls, env: gym.Env) -> MiniHackWrapper:
         helx_env = cls(
             env=env,
             observation_space=cls._wrap_space(env.observation_space),
