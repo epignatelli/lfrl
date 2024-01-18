@@ -31,7 +31,6 @@ argparser.add_argument("--lambda_", type=float, default=1.0)
 args = argparser.parse_args()
 
 
-
 def run_experiment(agent, env, budget, key, **kwargs):
     config = {**asdict(agent.hparams), **kwargs}
     wandb.init(project="calf", config=config)
@@ -106,27 +105,7 @@ def main():
     budget = args.budget
 
     # run experiment
-    config = {**asdict(agent.hparams), **args.__dict__}
-    wandb.init(project="calf", config=config)
-    iteration = 0
-    timestep = env.reset(key)
-    while True:
-        # step
-        k1, k2, key = jax.random.split(key, num=3)
-        experience, timestep = agent.collect_experience(env, timestep, key=k1)
-        agent, log = agent.update(experience, timestep, key=k2)
-
-        # log
-        iteration += experience.t.size
-        log["iteration"] = iteration
-        log["reward/average_reward"] = jnp.mean(experience.reward)
-        log["reward/min_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
-        log["reward/max_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
-        log["reward/average_episode_length"] = jnp.mean(jnp.max(experience.t, axis=-1))
-        print(log)
-        wandb.log(log)
-        if iteration > budget:
-            break
+    run_experiment(agent, env, budget, key, **args.__dict__)
 
 
 if __name__ == "__main__":
