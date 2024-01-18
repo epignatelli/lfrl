@@ -46,8 +46,8 @@ def run_experiment(agent, env, budget, key, **kwargs):
         iteration += experience.t.size
         log["iteration"] = iteration
         log["reward/average_reward"] = jnp.mean(experience.reward)
-        log["reward/min_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
-        log["reward/max_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
+        log["reward/min_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
+        log["reward/max_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
         log["reward/average_episode_length"] = jnp.mean(jnp.max(experience.t, axis=-1))
         print(log)
         wandb.log(log)
