@@ -9,10 +9,13 @@ import wandb
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
+from jax.random import KeyArray
 import optax
 import flax.linen as nn
 
 from helx.base.modules import Flatten
+from helx.base.mdp import Timestep
 
 from calf.ppo import HParams, PPO
 from calf.nethack import UndictWrapper, MiniHackWrapper
@@ -31,19 +34,34 @@ argparser.add_argument("--lambda_", type=float, default=1.0)
 args = argparser.parse_args()
 
 
-def run_experiment(agent, env, budget, key, **kwargs):
+def run_episode(agent: PPO, env: MiniHackWrapper, key: KeyArray) -> Timestep:
+    timestep = env.reset(key)
+    episode = []
+    while True:
+        k1, k2, key = jax.random.split(key, num=3)
+        action = agent.policy(agent.params, timestep.observation).sample(seed=k1)
+        timestep = env.step(k2, timestep, action)
+        if timestep.is_last():
+            break
+    return jtu.tree_map(lambda x: jnp.stack(x), timestep)
+
+
+def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
     config = {**asdict(agent.hparams), **kwargs}
     wandb.init(project="calf", config=config)
+    budget = kwargs["budget"]
+
+    frames = 0
     iteration = 0
     timestep = env.reset(key)
     while True:
         # step
         k1, k2, key = jax.random.split(key, num=3)
         experience, timestep = agent.collect_experience(env, timestep, key=k1)
-        agent, log = agent.update(experience, key=k2)
+        agent, log = agent.update(experience, timestep, key=k2)
 
         # log
-        iteration += experience.t.size
+        log["frames"] = frames
         log["iteration"] = iteration
         log["reward/average_reward"] = jnp.mean(experience.reward)
         log["reward/min_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
@@ -52,8 +70,18 @@ def run_experiment(agent, env, budget, key, **kwargs):
         print(log)
         wandb.log(log)
 
+        # evaluate
+        if iteration % 1000 == 0:
+            num_eval_episodes = 5
+            for _ in range(num_eval_episodes):
+                episode = run_episode(agent, env, key)
+                return_ = jnp.sum(episode.reward * agent.hparams.discount**episode.t)
+                wandb.log({"returns": jnp.mean(return_)})
+
         if iteration > budget:
             break
+        frames += experience.t.size
+        iteration += 1
 
 
 def main():
@@ -84,7 +112,12 @@ def main():
     )
     env = UndictWrapper(env, key="pixel_crop")
     env = MiniHackWrapper.wraps(env)
-    optimiser = optax.adam(learning_rate=hparams.learning_rate)
+    optimiser = optax.chain(
+        optax.clip_by_global_norm(hparams.gradient_clip_norm),
+        optax.scale_by_adam(),
+        optax.scale(-hparams.learning_rate)  # negative to minimise
+    )
+    optimiser = optax.adam(hparams.learning_rate)
     network = nn.Sequential(
         [
             nn.Conv(64, (3, 3), (1, 1)),
@@ -102,10 +135,9 @@ def main():
     )
     key = jax.random.PRNGKey(args.seed)
     agent = PPO.init(env, hparams, optimiser, network, key=key)
-    budget = args.budget
 
     # run experiment
-    run_experiment(agent, env, budget, key, **args.__dict__)
+    run_experiment(agent, env, key, **args.__dict__)
 
 
 if __name__ == "__main__":
