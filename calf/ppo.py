@@ -30,7 +30,7 @@ class HParams(struct.PyTreeNode):
     """Entropy bonus coefficient."""
     clip_ratio: float = 0.2
     """The epsilon parameter in the PPO paper."""
-    n_actors: int = 1
+    n_actors: int = 2
     """The number of actors to use."""
     n_epochs: int = 10
     """The number of epochs to train for each update."""
@@ -38,6 +38,8 @@ class HParams(struct.PyTreeNode):
     """The number of steps to collect in total from all environments at update."""
     batch_size: int = 256
     """The number of minibatches to run at each epoch."""
+    gradient_clip_norm: float = 0.5
+    """The maximum norm of the gradient"""
 
 
 class PPO(struct.PyTreeNode):
@@ -61,26 +63,27 @@ class PPO(struct.PyTreeNode):
         cls,
         env: Environment,
         hparams: HParams,
-        optimiser: optax.GradientTransformation,
         backbone: nn.Module,
         *,
         key: KeyArray,
     ) -> PPO:
         assert isinstance(env.action_space, Discrete)
-        # TODO: implement this check
-        # we do not check for the number of actors here, and we assume that the
-        # environment is batched, such that `env.step` returns `n_actors` timesteps
-        # assert env.n_parallel == hparams.n_actors
-        actor = nn.Sequential(
-            [backbone.clone(), nn.Dense(env.action_space.maximum + 1)]
+        assert (
+            env.observation_space.shape[0]
+            == env.action_space.shape[0]
+            == hparams.n_actors
         )
-        critic = nn.Sequential(
-            [backbone.clone(), nn.Dense(env.action_space.maximum + 1)]
-        )
+        actor = nn.Sequential([backbone.clone(), nn.Dense(env.action_space.maximum)])
+        critic = nn.Sequential([backbone.clone(), nn.Dense(env.action_space.maximum)])
         unbatched_obs_sample = env.observation_space.sample(key)[0]
         params_actor = actor.init(key, unbatched_obs_sample)
         params_critic = critic.init(key, unbatched_obs_sample)
         params = {"actor": params_actor, "critic": params_critic}
+        optimiser = optax.chain(
+            optax.clip_by_global_norm(hparams.gradient_clip_norm),
+            optax.scale_by_adam(),
+            optax.scale(-hparams.learning_rate),  # negative to minimise
+        )
         opt_state = optimiser.init(params)
         return cls(
             hparams=hparams,
@@ -115,10 +118,9 @@ class PPO(struct.PyTreeNode):
         """
 
         @jax.jit
+        @partial(jax.vmap, in_axes=(None, 0, 0))
         def batch_policy(params, observation, key):
-            action_distribution = jax.vmap(self.policy, in_axes=(None, 0))(
-                params, observation
-            )
+            action_distribution = self.policy(params, observation)
             action, log_prob = action_distribution.sample_and_log_prob(
                 seed=key, sample_shape=env.action_space.shape[1:]
             )
@@ -129,10 +131,20 @@ class PPO(struct.PyTreeNode):
         episodes = []
         for t in range(episode_length):
             k1, k2, key = jax.random.split(key, num=3)
+            k1 = jax.random.split(k1, num=env.action_space.shape[0])
             action, log_prob = batch_policy(self.params, timestep.observation, k1)
             timestep.info["log_prob"] = log_prob
             episodes.append(timestep)
+            # cache return
+            return_ = timestep.info["return"] * (
+                timestep.is_mid()
+            )
+            # step the environment
             timestep = env.step(k2, timestep, action)
+            # update return
+            timestep.info["return"] = return_ + (
+                timestep.reward * self.hparams.discount**timestep.t
+            )
         # first axis is the number of actors, second axis is time
         trajectories = jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episodes)
 
@@ -208,11 +220,11 @@ class PPO(struct.PyTreeNode):
             ratio, 1 - self.hparams.clip_ratio, 1 + self.hparams.clip_ratio
         )
         actor_loss = jnp.minimum(ratio * advantage, clipped_ratio * advantage)
-        actor_loss = -actor_loss  #  maximise
+        actor_loss = -actor_loss  # maximise
         # entropy
         entropy = jax.lax.stop_gradient(action_distribution.entropy())
         entropy_loss = jnp.asarray(entropy) * jnp.asarray(self.hparams.beta)
-        entropy_loss = -entropy_loss  #  maximise
+        entropy_loss = -entropy_loss  # maximise
         # total loss
         loss = actor_loss + critic_loss + entropy_loss
         # logs

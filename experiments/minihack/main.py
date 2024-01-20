@@ -1,6 +1,8 @@
 import argparse
 
+import random
 from dataclasses import asdict
+import numpy as np
 import gym
 import gym.vector
 import minihack
@@ -11,7 +13,6 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax.random import KeyArray
-import optax
 import flax.linen as nn
 
 from helx.base.modules import Flatten
@@ -19,6 +20,7 @@ from helx.base.mdp import Timestep
 
 from calf.ppo import HParams, PPO
 from calf.nethack import UndictWrapper, MiniHackWrapper
+
 
 
 argparser = argparse.ArgumentParser()
@@ -33,17 +35,37 @@ argparser.add_argument("--discount", type=float, default=1.0)
 argparser.add_argument("--lambda_", type=float, default=1.0)
 args = argparser.parse_args()
 
+np.random.seed(args.seed)
+random.seed(args.seed)
+
 
 def run_episode(agent: PPO, env: MiniHackWrapper, key: KeyArray) -> Timestep:
+    def sample_action(params, observation, key):
+        action_distribution = agent.policy(params, observation)
+        action = action_distribution.sample(
+            seed=key, sample_shape=env.action_space.shape[1:]
+        )
+        return action
+
+    sample_action = jax.jit(jax.vmap(sample_action, in_axes=(None, 0, 0)))
     timestep = env.reset(key)
     episode = []
+    timestep.info["return"] = timestep.reward
     while True:
         k1, k2, key = jax.random.split(key, num=3)
-        action = agent.policy(agent.params, timestep.observation).sample(seed=k1)
+        k1 = jax.random.split(k1, num=env.action_space.shape[0])
+        return_ = timestep.info["return"] * (timestep.is_mid())
+        action = sample_action(agent.params, timestep.observation, k1)
         timestep = env.step(k2, timestep, action)
-        if timestep.is_last():
+        timestep.info["return"] = return_ + (
+            timestep.reward * agent.hparams.discount**timestep.t
+        )
+
+        episode.append(timestep)
+        if timestep.is_last().all():
             break
-    return jtu.tree_map(lambda x: jnp.stack(x), timestep)
+
+    return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
 
 
 def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
@@ -54,31 +76,52 @@ def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
     frames = 0
     iteration = 0
     timestep = env.reset(key)
+    timestep.info["return"] = timestep.reward
     while True:
         # step
         k1, k2, key = jax.random.split(key, num=3)
         experience, timestep = agent.collect_experience(env, timestep, key=k1)
         agent, log = agent.update(experience, timestep, key=k2)
 
+        # extract returns
+        if "return" in experience.info:
+            return_ = experience.info["return"]
+            return_ = return_[experience.is_last()]
+            if return_.size > 0:
+                log["train/return"] = jnp.mean(return_)
+
+        # extraxt episode length
+        final_t = experience.t[experience.is_last()]
+        if final_t.size > 0:
+            log["train/episode_length"] = jnp.mean(final_t)
+
         # log
         log["frames"] = frames
         log["iteration"] = iteration
-        log["reward/average_reward"] = jnp.mean(experience.reward)
-        log["reward/min_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
-        log["reward/max_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
-        log["reward/average_episode_length"] = jnp.mean(jnp.max(experience.t, axis=-1))
+        log["train/average_reward"] = jnp.mean(experience.reward)
+        log["train/min_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
+        log["train/max_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
         print(log)
         wandb.log(log)
 
         # evaluate
         if iteration % 1000 == 0:
             num_eval_episodes = 5
+            log = {}
             for _ in range(num_eval_episodes):
                 episode = run_episode(agent, env, key)
-                return_ = jnp.sum(episode.reward * agent.hparams.discount**episode.t)
-                wandb.log({"returns": jnp.mean(return_)})
+                returns = jnp.mean(episode[episode.is_last()].info["return"])
+                log["val/return"] = returns
+                log["val/episode_length"] = episode.t[episode.is_last()].mean()
+                log["val/average_reward"] = jnp.mean(episode.reward)
+                log["val/min_reward"] = jnp.mean(jnp.min(episode.reward, axis=-1))
+                log["val/max_reward"] = jnp.mean(jnp.max(episode.reward, axis=-1))
+                log["val/episode"] = wandb.Video(
+                    np.asarray(episode.observation[0]).transpose(0, 3, 1, 2), fps=1
+                )
+                wandb.log(log)
 
-        if iteration > budget:
+        if frames > budget:
             break
         frames += experience.t.size
         iteration += 1
@@ -103,21 +146,15 @@ def main():
         nethack.Command.APPLY,
     ]
     env = gym.vector.make(
-        "MiniHack-KeyRoom-Fixed-S5-v0",
+        args.env_name,
         observation_keys=("pixel_crop",),
-        max_episode_steps=100,
         actions=actions,
+        max_episode_steps=100,
         num_envs=args.num_envs,
         asynchronous=True,
     )
     env = UndictWrapper(env, key="pixel_crop")
     env = MiniHackWrapper.wraps(env)
-    optimiser = optax.chain(
-        optax.clip_by_global_norm(hparams.gradient_clip_norm),
-        optax.scale_by_adam(),
-        optax.scale(-hparams.learning_rate)  # negative to minimise
-    )
-    optimiser = optax.adam(hparams.learning_rate)
     network = nn.Sequential(
         [
             nn.Conv(64, (3, 3), (1, 1)),
@@ -134,7 +171,7 @@ def main():
         ]
     )
     key = jax.random.PRNGKey(args.seed)
-    agent = PPO.init(env, hparams, optimiser, network, key=key)
+    agent = PPO.init(env, hparams, network, key=key)
 
     # run experiment
     run_experiment(agent, env, key, **args.__dict__)
