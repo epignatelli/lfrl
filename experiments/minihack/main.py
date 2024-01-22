@@ -19,8 +19,7 @@ from helx.base.modules import Flatten
 from helx.base.mdp import Timestep
 
 from calf.ppo import HParams, PPO
-from calf.nethack import UndictWrapper, MiniHackWrapper
-
+from calf.nethack import UndictWrapper, JaxWrapper, MiniHackWrapper
 
 
 argparser = argparse.ArgumentParser()
@@ -37,35 +36,6 @@ args = argparser.parse_args()
 
 np.random.seed(args.seed)
 random.seed(args.seed)
-
-
-def run_episode(agent: PPO, env: MiniHackWrapper, key: KeyArray) -> Timestep:
-    def sample_action(params, observation, key):
-        action_distribution = agent.policy(params, observation)
-        action = action_distribution.sample(
-            seed=key, sample_shape=env.action_space.shape[1:]
-        )
-        return action
-
-    sample_action = jax.jit(jax.vmap(sample_action, in_axes=(None, 0, 0)))
-    timestep = env.reset(key)
-    episode = []
-    timestep.info["return"] = timestep.reward
-    while True:
-        k1, k2, key = jax.random.split(key, num=3)
-        k1 = jax.random.split(k1, num=env.action_space.shape[0])
-        return_ = timestep.info["return"] * (timestep.is_mid())
-        action = sample_action(agent.params, timestep.observation, k1)
-        timestep = env.step(k2, timestep, action)
-        timestep.info["return"] = return_ + (
-            timestep.reward * agent.hparams.discount**timestep.t
-        )
-
-        episode.append(timestep)
-        if timestep.is_last().all():
-            break
-
-    return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
 
 
 def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
@@ -102,27 +72,18 @@ def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
         log["train/min_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
         log["train/max_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
         print(log)
-        wandb.log(log)
-
-        # evaluate
         if iteration % 1000 == 0:
-            num_eval_episodes = 5
-            log = {}
-            for _ in range(num_eval_episodes):
-                episode = run_episode(agent, env, key)
-                returns = jnp.mean(episode[episode.is_last()].info["return"])
-                log["val/return"] = returns
-                log["val/episode_length"] = episode.t[episode.is_last()].mean()
-                log["val/average_reward"] = jnp.mean(episode.reward)
-                log["val/min_reward"] = jnp.mean(jnp.min(episode.reward, axis=-1))
-                log["val/max_reward"] = jnp.mean(jnp.max(episode.reward, axis=-1))
-                log["val/episode"] = wandb.Video(
-                    np.asarray(episode.observation[0]).transpose(0, 3, 1, 2), fps=1
-                )
-                wandb.log(log)
+            start_ts = experience.t[experience.is_first()]
+            end_ts = experience.t[experience.is_last()]
+            renders = experience.observation[experience.t > start_ts & experience.t < end_ts]
+            log["train/render"] = wandb.Video(
+                np.asarray(renders[0]).transpose(0, 3, 1, 2), fps=1
+            )
+        wandb.log(log)
 
         if frames > budget:
             break
+
         frames += experience.t.size
         iteration += 1
 

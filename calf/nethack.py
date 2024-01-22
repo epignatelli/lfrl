@@ -36,6 +36,45 @@ class UndictWrapper(gym.core.ObservationWrapper):
         return obs[self.key]
 
 
+class JaxWrapper(gym.core.Wrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        # self.observation_space=self._wrap_space(env.observation_space),  # type: ignore
+        # self.action_space=self._wrap_space(env.action_space),  # type: ignore
+        # self.reward_space=Continuous(
+        #     minimum=env.reward_range[0],  # type: ignore
+        #     maximum=env.reward_range[1] // 100,  # type: ignore
+        # )
+
+    def reset(self, key: KeyArray) -> Tuple[Array, dict]:
+        timestep = self.env.reset()
+        return jtu.tree_map(lambda x: jnp.asarray(x), timestep)
+
+    def step(self, action: Array) -> Tuple[Array, Array, Array, Array, dict]:
+        timestep = self.env.step(np.array(action))
+        return jtu.tree_map(lambda x: jnp.asarray(x), timestep)
+
+    @classmethod
+    def _wrap_space(cls, gym_space: gym.spaces.Space) -> Space:
+        if isinstance(gym_space, gym.spaces.Discrete):
+            return Discrete(gym_space.n)
+        elif isinstance(gym_space, gym.spaces.Box):
+            return Continuous(
+                shape=gym_space.shape,
+                minimum=gym_space.low.min().item(),
+                maximum=gym_space.high.max().item(),
+            )
+        elif isinstance(gym_space, gym.spaces.MultiDiscrete):
+            # gym.vector.VectorEnv returns MultiDiscrete
+            upper = np.array(gym_space.nvec)
+            assert np.sum(upper - upper) <= np.array(0)
+            return Discrete(upper[0], shape=gym_space.shape)
+        else:
+            raise NotImplementedError(
+                "Cannot convert dm_env space of type {}".format(type(gym_space))
+            )
+
+
 class MiniHackWrapper(GymWrapper):
     def reset(self, key: KeyArray) -> Timestep:
         # get num envs
@@ -48,15 +87,17 @@ class MiniHackWrapper(GymWrapper):
         rewards = np.zeros((num_envs,))
         dones = np.asarray([False] * num_envs)
         timestep = (obs, rewards, dones, info)
-        # add additional info for helx
         t = jnp.zeros((num_envs,))
         action = jnp.zeros((num_envs,)) - 1
         timestep = self._wrap_timestep(timestep, action=action, t=t)
+        timestep.info['return'] = timestep.reward
         return timestep
 
     def _step(self, key: KeyArray, timestep: Timestep, action: Array) -> Timestep:
         next_timestep = self.env.step(np.asarray(action))
-        next_timestep = self._wrap_timestep(next_timestep, action, timestep.t + 1)
+        t = jnp.asarray((timestep.t + 1) * timestep.is_mid(), dtype=jnp.int32)
+        action = (action * timestep.is_mid()) - (timestep.is_last())
+        next_timestep = self._wrap_timestep(next_timestep, action, t)
         return next_timestep
 
     @classmethod
@@ -114,7 +155,7 @@ class MiniHackWrapper(GymWrapper):
             reward=reward,
             step_type=step_type,
             action=action,
-            t=t,
+            t=jnp.asarray(t, dtype=jnp.int32),
             state=None,
             info=info,
         )

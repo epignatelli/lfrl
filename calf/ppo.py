@@ -1,6 +1,6 @@
 from __future__ import annotations
 from functools import partial
-from typing import Dict, Tuple
+from typing import Any, Dict, Sequence, Tuple
 
 import distrax
 import flax.linen as nn
@@ -40,6 +40,10 @@ class HParams(struct.PyTreeNode):
     """The number of minibatches to run at each epoch."""
     gradient_clip_norm: float = 0.5
     """The maximum norm of the gradient"""
+    normalise_advantage: bool = False
+    """Whether to normalise the advantage function."""
+    value_clipping: bool = False
+    """Whether to clip the value function estimates."""
 
 
 class PPO(struct.PyTreeNode):
@@ -73,7 +77,12 @@ class PPO(struct.PyTreeNode):
             == env.action_space.shape[0]
             == hparams.n_actors
         )
-        actor = nn.Sequential([backbone.clone(), nn.Dense(env.action_space.maximum)])
+        actor = nn.Sequential(
+            [
+                backbone.clone(),
+                nn.Dense(env.action_space.maximum, kernel_init=rescaled_lecun_normal()),
+            ]
+        )
         critic = nn.Sequential([backbone.clone(), nn.Dense(env.action_space.maximum)])
         unbatched_obs_sample = env.observation_space.sample(key)[0]
         params_actor = actor.init(key, unbatched_obs_sample)
@@ -94,7 +103,7 @@ class PPO(struct.PyTreeNode):
             opt_state=opt_state,
         )
 
-    def policy(self, params: Params, observation: Array) -> distrax.Distribution:
+    def policy(self, params: Params, observation: Array) -> distrax.Softmax:
         logits = jnp.asarray(self.actor.apply(params["actor"], observation))
         return distrax.Softmax(logits=logits)
 
@@ -121,9 +130,10 @@ class PPO(struct.PyTreeNode):
         @partial(jax.vmap, in_axes=(None, 0, 0))
         def batch_policy(params, observation, key):
             action_distribution = self.policy(params, observation)
-            action, log_prob = action_distribution.sample_and_log_prob(
+            action = action_distribution.sample(
                 seed=key, sample_shape=env.action_space.shape[1:]
             )
+            log_prob = jnp.log(action_distribution.probs)
             return action, log_prob
 
         # collect trajectories
@@ -136,9 +146,7 @@ class PPO(struct.PyTreeNode):
             timestep.info["log_prob"] = log_prob
             episodes.append(timestep)
             # cache return
-            return_ = timestep.info["return"] * (
-                timestep.is_mid()
-            )
+            return_ = timestep.info["return"] * (timestep.is_mid())
             # step the environment
             timestep = env.step(k2, timestep, action)
             # update return
@@ -170,13 +178,16 @@ class PPO(struct.PyTreeNode):
             episodes.t.ndim
         )
         assert episodes.t.ndim == 2, msg
+        assert "log_prob" in episodes.info
+
         batch_size = self.hparams.batch_size
         episode_length = episodes.t.shape[1]
         # compute the advantage for each timestep
         action_values = jax.vmap(
             jax.vmap(self.value_fn, in_axes=(None, 0)), in_axes=(None, 0)
         )(self.params, episodes.observation)
-        state_values = jnp.mean(action_values, axis=-1)
+        log_prob = episodes.info["log_prob"]
+        state_values = jnp.sum(log_prob * action_values, axis=-1)
         # apply termination mask
         values = state_values * (episodes.step_type != StepType.TERMINATION)
         advantages = jax.vmap(
@@ -187,6 +198,9 @@ class PPO(struct.PyTreeNode):
             self.hparams.lambda_,
             values,
         )
+        if self.hparams.normalise_advantage:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
+
         episodes.info["advantage"] = advantages
         # sample transitions
         actor_idx = jax.random.randint(
@@ -208,7 +222,9 @@ class PPO(struct.PyTreeNode):
         # stop gradient on advantage and log_prob
         advantage = transition.info["advantage"]
         advantage = jax.lax.stop_gradient(advantage)
-        log_prob_old = jax.lax.stop_gradient(transition.info["log_prob"])
+        log_prob_old = jax.lax.stop_gradient(
+            transition.info["log_prob"][transition.action]
+        )
         # critic loss
         q_values = self.value_fn(params, transition.observation)
         critic_loss = 0.5 * jnp.square(q_values[transition.action] - advantage)
@@ -256,3 +272,141 @@ class PPO(struct.PyTreeNode):
             params = optax.apply_updates(params, updates)
             log["grads/grad_norm"] = optax.global_norm(updates)
         return self.replace(params=params, opt_state=opt_state), log
+
+
+def run_n_steps(
+    env: Environment, timestep: Timestep, agent: PPO, n_steps: int, *, key: KeyArray
+) -> Timestep:
+    """Runs `n_steps` in the environment using the agent's policy and returns a
+    partial trajectory.
+
+    Args:
+        env (Environment): the environment to step in.
+        timestep (Timestep): the timestep to start from.
+        agent (PPO): the agent.
+        n_steps (int): the number of steps to run.
+        key (KeyArray): a random key to sample actions.
+
+    Returns:
+        Timestep: a partial trajectory of length `n_steps`.
+        The trajectory can contain multiple episodes.
+        Each timestep in the trajectory has the following structure:
+        $(t, o_t, a_{t-1}, r_{t-1}, step_type_{t-1}, info_{t-1})$
+        where:
+        $a_{t} \\sim \\pi(s_t)$ is the action sampled from the policy conditioned on
+        $s_t$; $r_{t} = R(s_t, a_t)$ is the reward after taking the action $a_t$ in
+        $s_t$.
+
+    Example:
+        (0, s_0, -1,  0.0,      0, info_0)  RESET
+        (1, s_1, a_0, r_0, term_0, info_0)
+        (2, s_2, a_1, r_1, term_1, info_1)
+        (3, s_3, a_2, r_2, term_2, info_2)  TERMINATION
+        (0, s_0, -1,  0.0,      0, info_3)  RESET
+        (1, s_1, a_0, r_0, term_0, info_0)
+        (2, s_2, a_1, r_1, term_1, info_1)  TERMINATION
+        (0, s_0, -1,  0.0,      0, info_2)  RESET
+    """
+
+    @jax.jit
+    @partial(jax.vmap, in_axes=(None, 0, 0))
+    def policy_sample(params, observation, key):
+        action_distribution = agent.policy(params, observation)
+        action = action_distribution.sample(
+            seed=key, sample_shape=env.action_space.shape[1:]
+        )
+        log_probs = jnp.log(action_distribution.probs)
+        return action, log_prob
+
+    episode = []
+    for _ in range(n_steps):
+        k1, k2, key = jax.random.split(key, num=3)
+        k1 = jax.random.split(k1, num=env.action_space.shape[0])
+        episode.append(timestep)
+        # step the environment
+        action, log_prob = policy_sample(agent.params, timestep.observation, k1)
+        timestep.info["log_prob"] = log_prob
+        next_timestep = env.step(k2, timestep, action)
+        # log return, if available
+        if "return" in timestep.info:
+            next_timestep.info["return"] = timestep.info["return"] * (
+                timestep.is_mid()
+                + (next_timestep.reward * agent.hparams.discount**next_timestep.t)
+            )
+        timestep = next_timestep
+
+    return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
+
+
+def run_episode(env: Environment, agent: PPO, *, key: KeyArray) -> Timestep:
+    @jax.jit
+    @partial(jax.vmap, in_axes=(None, 0, 0))
+    def policy_sample(params, observation, key):
+        action_distribution = agent.policy(params, observation)
+        action, log_prob = action_distribution.sample_and_log_prob(
+            seed=key, sample_shape=env.action_space.shape[1:]
+        )
+        return action, log_prob
+
+    timestep = env.reset(key)
+    timestep.info["return"] = timestep.reward
+    final = timestep.is_last()
+    episode = []
+    while True:
+        k1, k2, key = jax.random.split(key, num=3)
+        k1 = jax.random.split(k1, num=env.action_space.shape[0])
+        episode.append(timestep)
+        # step the environment
+        action, log_prob = policy_sample(agent.params, timestep.observation, k1)
+        timestep.info["log_prob"] = log_prob
+        next_timestep = env.step(k2, timestep, action)
+        # log return, if available
+        if "return" in timestep.info:
+            next_timestep.info["return"] = timestep.info["return"] * (
+                timestep.is_mid()
+                + (next_timestep.reward * agent.hparams.discount**next_timestep.t)
+            )
+        final = jnp.logical_or(final, timestep.is_last())
+        if final.all():
+            break
+        timestep = next_timestep
+
+    return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
+
+
+def truncated_gae(
+    episode: Timestep, values: Array, discount: float, lambda_: float
+) -> Array:
+    """Computes the truncated Generalised Advantage Estimation (GAE) for a continuos
+    stream of experience that may include multiple episodes.
+    Args:
+        episode (Timestep): a Timestep representing a trajectory of length `T`.
+        values (Array): the value function estimates in the range `[0, T]`.
+        discount (float): the MDP discount factor.
+        lambda_ (float): the lambda parameter for the TD(lambda) algorithm.
+    Returns:
+        Array: the GAE estimates in the range `[0, T]`."""
+    advantage = rlax.truncated_generalized_advantage_estimation(
+        episode.reward[:-1],
+        episode.is_mid()[:-1] * discount ** episode.t[:-1],
+        lambda_,
+        values,
+    )
+    return jnp.asarray(advantage * episode.is_mid())
+
+
+def rescaled_lecun_normal(
+    in_axis: int | Sequence[int] = -2,
+    out_axis: int | Sequence[int] = -1,
+    batch_axis: Sequence[int] = (),
+    dtype: Any = jnp.float_,
+) -> nn.initializers.Initializer:
+    return nn.initializers.variance_scaling(
+        0.01,
+        "fan_in",
+        "truncated_normal",
+        in_axis=in_axis,
+        out_axis=out_axis,
+        batch_axis=batch_axis,
+        dtype=dtype,
+    )
