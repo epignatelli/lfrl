@@ -36,45 +36,6 @@ class UndictWrapper(gym.core.ObservationWrapper):
         return obs[self.key]
 
 
-class JaxWrapper(gym.core.Wrapper):
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
-        # self.observation_space=self._wrap_space(env.observation_space),  # type: ignore
-        # self.action_space=self._wrap_space(env.action_space),  # type: ignore
-        # self.reward_space=Continuous(
-        #     minimum=env.reward_range[0],  # type: ignore
-        #     maximum=env.reward_range[1] // 100,  # type: ignore
-        # )
-
-    def reset(self, key: KeyArray) -> Tuple[Array, dict]:
-        timestep = self.env.reset()
-        return jtu.tree_map(lambda x: jnp.asarray(x), timestep)
-
-    def step(self, action: Array) -> Tuple[Array, Array, Array, Array, dict]:
-        timestep = self.env.step(np.array(action))
-        return jtu.tree_map(lambda x: jnp.asarray(x), timestep)
-
-    @classmethod
-    def _wrap_space(cls, gym_space: gym.spaces.Space) -> Space:
-        if isinstance(gym_space, gym.spaces.Discrete):
-            return Discrete(gym_space.n)
-        elif isinstance(gym_space, gym.spaces.Box):
-            return Continuous(
-                shape=gym_space.shape,
-                minimum=gym_space.low.min().item(),
-                maximum=gym_space.high.max().item(),
-            )
-        elif isinstance(gym_space, gym.spaces.MultiDiscrete):
-            # gym.vector.VectorEnv returns MultiDiscrete
-            upper = np.array(gym_space.nvec)
-            assert np.sum(upper - upper) <= np.array(0)
-            return Discrete(upper[0], shape=gym_space.shape)
-        else:
-            raise NotImplementedError(
-                "Cannot convert dm_env space of type {}".format(type(gym_space))
-            )
-
-
 class MiniHackWrapper(GymWrapper):
     def reset(self, key: KeyArray) -> Timestep:
         # get num envs
@@ -97,6 +58,7 @@ class MiniHackWrapper(GymWrapper):
         next_timestep = self.env.step(np.asarray(action))
         t = jnp.asarray((timestep.t + 1) * timestep.is_mid(), dtype=jnp.int32)
         action = (action * timestep.is_mid()) - (timestep.is_last())
+        # (t, s_{t+1}, r_t, d_t, a_t, g_t)
         next_timestep = self._wrap_timestep(next_timestep, action, t)
         return next_timestep
 
@@ -170,10 +132,6 @@ SYMSET = {
     ">": "staircase down",
     "<": "staircase up",
 }
-
-
-def get_sym_desc(sym: str) -> str:
-    ...
 
 
 ACTIONS_MAP = {

@@ -11,27 +11,27 @@ import wandb
 
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 from jax.random import KeyArray
 import flax.linen as nn
 
 from helx.base.modules import Flatten
-from helx.base.mdp import Timestep
 
 from calf.ppo import HParams, PPO
-from calf.nethack import UndictWrapper, JaxWrapper, MiniHackWrapper
+from calf.nethack import UndictWrapper, MiniHackWrapper
 
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--seed", type=int, default=0)
-argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
-argparser.add_argument("--num_envs", type=int, default=3)
-argparser.add_argument("--num_epochs", type=int, default=4)
-argparser.add_argument("--num_minibatches", type=int, default=4)
-argparser.add_argument("--num_steps", type=int, default=1)
-argparser.add_argument("--budget", type=int, default=100_000)
+argparser.add_argument("--env_name", type=str, default="MiniHack-Room-5x5-v0")
+
+argparser.add_argument("--budget", type=int, default=10_000_000)
+argparser.add_argument("--n_actors", type=int, default=3)
+argparser.add_argument("--n_epochs", type=int, default=4)
+argparser.add_argument("--batch_size", type=int, default=4)
+argparser.add_argument("--iteration_size", type=int, default=30)
 argparser.add_argument("--discount", type=float, default=1.0)
 argparser.add_argument("--lambda_", type=float, default=1.0)
+argparser.add_argument("--observation_key", type=str, default="pixel_crop")
 args = argparser.parse_args()
 
 np.random.seed(args.seed)
@@ -51,7 +51,7 @@ def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
         # step
         k1, k2, key = jax.random.split(key, num=3)
         experience, timestep = agent.collect_experience(env, timestep, key=k1)
-        agent, log = agent.update(experience, timestep, key=k2)
+        agent, log = agent.update(experience, key=k2)
 
         # extract returns
         if "return" in experience.info:
@@ -72,13 +72,14 @@ def run_experiment(agent: PPO, env: MiniHackWrapper, key: KeyArray, **kwargs):
         log["train/min_reward"] = jnp.mean(jnp.min(experience.reward, axis=-1))
         log["train/max_reward"] = jnp.mean(jnp.max(experience.reward, axis=-1))
         print(log)
-        if iteration % 1000 == 0:
-            start_ts = experience.t[experience.is_first()]
-            end_ts = experience.t[experience.is_last()]
-            renders = experience.observation[experience.t > start_ts & experience.t < end_ts]
-            log["train/render"] = wandb.Video(
-                np.asarray(renders[0]).transpose(0, 3, 1, 2), fps=1
-            )
+        if frames % 1_000_000 <= (agent.hparams.iteration_size + 1):
+            start_t = experience.t[0][experience.is_first()[0]]
+            end_t = experience.t[0][experience.is_last()[0]]
+            if start_t.size > 0 and end_t.size > 0:
+                render = experience.observation[0, start_t[0] : end_t[0]]
+                log["train/render"] = wandb.Video(
+                    np.asarray(render.transpose(0, 3, 1, 2)), fps=1
+                )
         wandb.log(log)
 
         if frames > budget:
@@ -92,11 +93,12 @@ def main():
     hparams = HParams(
         beta=0.01,
         clip_ratio=0.2,
-        n_actors=args.num_envs,
-        n_epochs=args.num_epochs,
-        batch_size=args.num_minibatches,
+        n_actors=args.n_actors,
+        n_epochs=args.n_epochs,
+        batch_size=args.batch_size,
         discount=args.discount,
         lambda_=args.lambda_,
+        iteration_size=args.iteration_size,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -108,21 +110,22 @@ def main():
     ]
     env = gym.vector.make(
         args.env_name,
-        observation_keys=("pixel_crop",),
+        observation_keys=(args.observation_key,),
         actions=actions,
         max_episode_steps=100,
-        num_envs=args.num_envs,
+        num_envs=args.n_actors,
         asynchronous=True,
     )
-    env = UndictWrapper(env, key="pixel_crop")
+    env = UndictWrapper(env, key=args.observation_key)
     env = MiniHackWrapper.wraps(env)
     network = nn.Sequential(
         [
-            nn.Conv(64, (3, 3), (1, 1)),
+            # greyscale,
+            nn.Conv(16, (3, 3), (1, 1)),
             nn.tanh,
             nn.Conv(32, (3, 3), (1, 1)),
             nn.tanh,
-            nn.Conv(16, (3, 3), (1, 1)),
+            nn.Conv(64, (3, 3), (1, 1)),
             nn.tanh,
             Flatten(),
             nn.Dense(256),
