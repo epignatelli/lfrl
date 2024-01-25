@@ -87,13 +87,12 @@ class PPO(struct.PyTreeNode):
             [
                 backbone.clone(),
                 nn.Dense(
-                    env.action_space.maximum + 1, kernel_init=rescaled_lecun_normal()
+                    env.action_space.maximum + 1,
+                    kernel_init=nn.initializers.orthogonal(scale=0.01),
                 ),
             ]
         )
-        critic = nn.Sequential(
-            [backbone.clone(), nn.Dense(env.action_space.maximum + 1)]
-        )
+        critic = nn.Sequential([backbone.clone(), nn.Dense(1)])
         unbatched_obs_sample = env.observation_space.sample(key)[0]
         params_actor = actor.init(key, unbatched_obs_sample)
         params_critic = critic.init(key, unbatched_obs_sample)
@@ -117,7 +116,7 @@ class PPO(struct.PyTreeNode):
         return distrax.Softmax(logits=logits)
 
     def value_fn(self, params: Params, observation: Array) -> Array:
-        return jnp.asarray(self.critic.apply(params["critic"], observation))
+        return jnp.asarray(self.critic.apply(params["critic"], observation))[0]
 
     def collect_experience(
         self, env: Environment, timestep: Timestep, *, key: KeyArray
@@ -141,19 +140,25 @@ class PPO(struct.PyTreeNode):
         """Calculate targets for multiple concatenated episodes.
         For episodes with a total sum of T steps, it computes values and advantage
         in the range [0, T-1]"""
-        action = episode.action[1:]  # a_t
-        obs = episode.observation[:-1]  # s_t
-        step_type = episode.step_type[1:]  # d_t(s_t, a_t)
-        q_values = jax.vmap(self.value_fn, in_axes=(None, 0))(
-            self.params, obs
-        )  # q(s_t, a'_t) \\forall a'
-        value = jax.vmap(lambda x, i: x[i])(q_values, action) # q(s_t, a_t)
-        value = value * (step_type != StepType.TERMINATION)
-        advantage = truncated_gae(
-            episode, value, self.hparams.discount, self.hparams.lambda_
+        assert episode.t.ndim == 1, "episode.t.ndim must be 1, got {} instead.".format(
+            episode.t.ndim
         )
-        if self.hparams.advantage_normalisation:
-            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-6)
+        obs = episode.observation  # s_t \\forall t \\in [0, T]
+        reward = episode.reward[1:]  # r_t \\forall t \\in [0, T-1]
+        discount = (episode.is_mid() * self.hparams.discount**episode.t)[
+            1:
+        ]  # \\gamma^t \\forall t \\in [0, T-1]
+        value = jax.vmap(self.value_fn, in_axes=(None, 0))(self.params, obs) * (
+            episode.step_type != StepType.TERMINATION
+        )  # q(s_t, a'_t) \\forall a'
+        advantage = jnp.asarray(
+            rlax.truncated_generalized_advantage_estimation(
+                reward,
+                discount,
+                self.hparams.lambda_,
+                value,
+            )
+        )
         # values and advantages from [0, T-1]
         return value, advantage
 
@@ -169,30 +174,13 @@ class PPO(struct.PyTreeNode):
             Timestep: a minibatch of transitions (2-steps sars tuples) where the
             first axis is the number of actors * n_steps // n_minibatches
         """
-        msg = "`episodes` must be a batch of trajectories with at least two-steps,\
-        got `episode.t.ndim` = {} instead".format(
+        assert episodes.t.ndim == 2, "episodes.ndim must be 2, got {} instead.".format(
             episodes.t.ndim
         )
-        assert episodes.t.ndim == 2, msg
-        assert "log_probs" in episodes.info
-        # compute the advantage for each timestep
-        q_values = jax.vmap(
-            jax.vmap(self.value_fn, in_axes=(None, 0)), in_axes=(None, 0)
-        )(self.params, episodes.observation)
+        value, advantage = jax.vmap(self.evaluate_experience)(episodes)
+        episodes.info["value"] = value
+        episodes.info["advantage"] = advantage
 
-        log_probs = episodes.info["log_probs"]
-        state_values = jnp.sum(jnp.exp(log_probs) * q_values, axis=-1)
-        values = state_values * (episodes.step_type != StepType.TERMINATION)
-        # action = episodes.action[:, :, 1:]
-        # values = q_values[:, :, action] * (episodes.step_type != StepType.TERMINATION)
-
-        advantages = jax.vmap(truncated_gae, in_axes=(0, 0, None, None))(
-            episodes, values, self.hparams.discount, self.hparams.lambda_
-        )
-        if self.hparams.advantage_normalisation:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
-        episodes.info["action_value"] = q_values
-        episodes.info["advantage"] = advantages
         # sample transitions
         batch_size = self.hparams.batch_size
         actor_idx = jax.random.randint(
@@ -201,40 +189,33 @@ class PPO(struct.PyTreeNode):
         # exclude last timestep (-1) as it was excluded from the advantage computation
         episode_length = episodes.t.shape[1]
         time_idx = jax.random.randint(
-            key, shape=(batch_size,), minval=0, maxval=episode_length - 1
+            key, shape=(batch_size,), minval=0, maxval=episode_length
         )
-        # def get_time_idx(episode):
-        #     time_idx = jnp.arange(episode_length - 1)[episode.is_mid()]
-        #     return jax.random.choice(key, time_idx, shape=(batch_size,), replace=False)
-        # time_idx = jax.vmap(get_time_idx)(episodes)
         transitions_t = episodes[actor_idx, time_idx]  # contains s_{t+1}
-        transitions_tp1 = episodes[actor_idx, time_idx + 1]  # contains a_t, \pi_t(a_t)
-        transitions = jtu.tree_map(
+        transitions_tp1 = episodes[actor_idx, time_idx + 1]  # contains s_{t+2}
+        return jtu.tree_map(
             lambda *x: jnp.stack(x, axis=1), transitions_t, transitions_tp1
         )  # (batch_size, 2)
-        return transitions
 
     def loss(
         self, params: Params, transition: Timestep
     ) -> Tuple[Array, Dict[str, Array]]:
         # make sure the transition has the required info
         assert "advantage" in transition.info
-        assert "log_probs" in transition.info
-        # stop gradient on advantage and log_probs
+        assert "log_prob" in transition.info
+        # stop gradient on advantage and log_prob
         observation = transition.observation[0]  # s_t
         advantage = stop_gradient(transition.info["advantage"][0])  # A(s_t, a_t)
-        action_value_old = stop_gradient(
-            transition.info["action_value"][0]
-        )  # A(s_t, a_t)
+        action_value_old = stop_gradient(transition.info["value"][0])  # v_{k-1}(s_t)
         action = stop_gradient(transition.action[1])  # a_t
-        log_prob_old = stop_gradient(transition.info["log_probs"][1][action])
+        log_prob_old = stop_gradient(transition.info["log_prob"][0])
         # critic loss
-        q_value = self.value_fn(params, observation)[action]  # q(s_t, a_t)
-        critic_loss = 0.5 * jnp.square(q_value - advantage)
+        value = self.value_fn(params, observation)  # v(s_t)
+        critic_loss = 0.5 * jnp.square(value - advantage)
         if self.hparams.value_clipping:
-            action_value_old = action_value_old[action]
+            action_value_old = action_value_old
             value_clipped = jnp.clip(
-                q_value,
+                value,
                 action_value_old - self.hparams.clip_ratio,
                 action_value_old + self.hparams.clip_ratio,
             )
@@ -243,8 +224,8 @@ class PPO(struct.PyTreeNode):
         critic_loss = self.hparams.value_loss_coefficient * critic_loss
         # actor loss
         action_distribution = self.policy(params, observation)
-        log_probs = action_distribution.log_prob(action)
-        ratio = jnp.exp(log_probs - log_prob_old)
+        log_prob = action_distribution.log_prob(action)
+        ratio = jnp.exp(log_prob - log_prob_old)
         clipped_ratio = jnp.clip(
             ratio, 1 - self.hparams.clip_ratio, 1 + self.hparams.clip_ratio
         )
@@ -324,8 +305,6 @@ def run_n_steps(
     1    (1, s_1, a_0, r_0, term_0, info_0, G_1 = G_0 + r_0 * gamma ** 1)
     2    (2, s_2, a_1, r_1, term_1, info_1, G_2 = G_1 + r_1)
     3    (3, s_3, a_2, r_2, term_2, info_2, G_3 = G_2 + r_2)  TERMINATION
-    4    (0, s_0,  -1, 0.0,      0, info_3, G_4 = G_3 + 0.0)  RESET
-    5    (1, s_1, a_0, r_0, term_0, info_0, G_0 = r_0)
 
     idx = 3:
         timestep_t =   (3, s_3, a_2, r_2, term_2, info_2, G_2 = G_1 + r_2)  TERMINATION
@@ -336,10 +315,9 @@ def run_n_steps(
     @partial(jax.vmap, in_axes=(None, 0, 0))
     def policy_sample(params, observation, key):
         action_distribution = agent.policy(params, observation)
-        action = action_distribution.sample(
+        action, log_prob = action_distribution.sample_and_log_prob(
             seed=key, sample_shape=env.action_space.shape[1:]
         )
-        log_prob = jnp.log(action_distribution.probs)
         return action, log_prob
 
     episode = []
@@ -348,8 +326,8 @@ def run_n_steps(
         k1 = jax.random.split(k1, num=env.action_space.shape[0])
         episode.append(timestep)
         # step the environment
-        action, log_probs = policy_sample(agent.params, timestep.observation, k1)
-        timestep.info["log_probs"] = log_probs
+        action, log_prob = policy_sample(agent.params, timestep.observation, k1)
+        timestep.info["log_prob"] = log_prob
         next_timestep = env.step(k2, timestep, action)
         # log return, if available
         if "return" in timestep.info:
@@ -367,10 +345,10 @@ def run_episode(env: Environment, agent: PPO, *, key: KeyArray) -> Timestep:
     @partial(jax.vmap, in_axes=(None, 0, 0))
     def policy_sample(params, observation, key):
         action_distribution = agent.policy(params, observation)
-        action, log_probs = action_distribution.sample_and_log_prob(
+        action, log_prob = action_distribution.sample_and_log_prob(
             seed=key, sample_shape=env.action_space.shape[1:]
         )
-        return action, log_probs
+        return action, log_prob
 
     timestep = env.reset(key)
     timestep.info["return"] = timestep.reward
@@ -381,8 +359,8 @@ def run_episode(env: Environment, agent: PPO, *, key: KeyArray) -> Timestep:
         k1 = jax.random.split(k1, num=env.action_space.shape[0])
         episode.append(timestep)
         # step the environment
-        action, log_probs = policy_sample(agent.params, timestep.observation, k1)
-        timestep.info["log_probs"] = log_probs
+        action, log_prob = policy_sample(agent.params, timestep.observation, k1)
+        timestep.info["log_prob"] = log_prob
         next_timestep = env.step(k2, timestep, action)
         # log return, if available
         if "return" in timestep.info:
@@ -396,42 +374,3 @@ def run_episode(env: Environment, agent: PPO, *, key: KeyArray) -> Timestep:
         timestep = next_timestep
 
     return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
-
-
-def truncated_gae(
-    episode: Timestep, values: Array, discount: float, lambda_: float
-) -> Array:
-    """Computes the truncated Generalised Advantage Estimation (GAE) for a continuos
-    stream of experience that may include multiple, concatenated, episodes.
-    Args:
-        episode (Timestep): a Timestep representing a trajectory of length `T`.
-        values (Array): the value function estimates in the range `[0, T]`.
-        discount (float): the MDP discount factor.
-        lambda_ (float): the lambda parameter for the TD(lambda) algorithm.
-    Returns:
-        Array: the GAE estimates in the range `[0, T]`."""
-    advantage = rlax.truncated_generalized_advantage_estimation(
-        episode.reward[1:],
-        episode.is_mid()[1:] * discount ** episode.t[1:],
-        lambda_,
-        values,
-    )
-    return jnp.asarray(advantage * episode.is_mid()[1:])
-
-
-def rescaled_lecun_normal(
-    scale: float = 0.01,
-    in_axis: int | Sequence[int] = -2,
-    out_axis: int | Sequence[int] = -1,
-    batch_axis: Sequence[int] = (),
-    dtype: Any = jnp.float_,
-) -> nn.initializers.Initializer:
-    return nn.initializers.variance_scaling(
-        scale,
-        "fan_in",
-        "truncated_normal",
-        in_axis=in_axis,
-        out_axis=out_axis,
-        batch_axis=batch_axis,
-        dtype=dtype,
-    )
