@@ -179,6 +179,8 @@ class PPO(struct.PyTreeNode):
         )
         value, advantage = jax.vmap(self.evaluate_experience)(episodes)
         episodes.info["value"] = value
+        if self.hparams.advantage_normalisation:
+            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-6)
         episodes.info["advantage"] = advantage
 
         # sample transitions
