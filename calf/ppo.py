@@ -1,6 +1,6 @@
 from __future__ import annotations
 from functools import partial
-from typing import Any, Dict, Sequence, Tuple
+from typing import Dict, Tuple
 
 import distrax
 import flax.linen as nn
@@ -213,7 +213,6 @@ class PPO(struct.PyTreeNode):
         value = self.value_fn(params, observation)  # v(s_t)
         critic_loss = 0.5 * jnp.square(value - advantage)
         if self.hparams.value_clipping:
-            action_value_old = action_value_old
             value_clipped = jnp.clip(
                 value,
                 action_value_old - self.hparams.clip_ratio,
@@ -299,12 +298,6 @@ def run_n_steps(
     5    (1, s_1, a_0, r_0, term_0, info_0, G_0 = r_0)
     6    (2, s_2, a_1, r_1, term_1, info_1, G_1 = G_1 + r_1)  TERMINATION
     7    (0, s_0,  -1, 0.0,      0, info_2, G_2 = G_1 + 0.0)  RESET
-
-    Or:
-    0    (0, s_0,  -1, 0.0,      0, info_0, G_0)  RESET
-    1    (1, s_1, a_0, r_0, term_0, info_0, G_1 = G_0 + r_0 * gamma ** 1)
-    2    (2, s_2, a_1, r_1, term_1, info_1, G_2 = G_1 + r_1)
-    3    (3, s_3, a_2, r_2, term_2, info_2, G_3 = G_2 + r_2)  TERMINATION
 
     idx = 3:
         timestep_t =   (3, s_3, a_2, r_2, term_2, info_2, G_2 = G_1 + r_2)  TERMINATION
