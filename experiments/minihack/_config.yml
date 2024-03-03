@@ -1,0 +1,22 @@
+demonstrate:
+  n_actors: 8
+  budget: 10000000
+  env_name: "MiniHack-Room-5x5-v0"
+  lambda_: 0.95
+  discount: 0.99
+  iteration_size: 2048
+  batch_size: 128
+  seed: 0
+annotate:
+  max_new_tokens: 512
+  url: "http://localhost:5000/respond"
+  batch_size: 128
+calf:
+  n_actors: 8
+  budget: 10000000
+  env_name: "MiniHack-Room-5x5-v0"
+  lambda_: 0.95
+  discount: 0.99
+  iteration_size: 2048
+  batch_size: 128
+  seed: 0

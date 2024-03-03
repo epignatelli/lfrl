@@ -8,7 +8,7 @@ import time
 import torch
 import torch.backends.cuda
 import wandb
-from calf.models import (
+from calf.language_models import (
     Llama7B,
     Mistral7B,
     OpenOrcaMistral7B,

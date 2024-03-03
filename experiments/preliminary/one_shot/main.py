@@ -1,5 +1,5 @@
 import requests
-from calf.prompts import PROMPT_CREDIT_ASSIGNMENT, PROMPT_COUNTERFACTUALS, PROMPT_REDISTRIBUTION, PROMPT_EXPERIMENT
+from calf.prompts import PROMPT_TD_WEIGHTING, PROMPT_COUNTERFACTUALS, PROMPT_REDISTRIBUTION, PROMPT_EXPERIMENT
 from calf.example_trajectories import TRAJECTORY_1, TRAJECTORY_2, TRAJECTORY_3, TRAJECTORY_4, TRAJECTORY_6, OBSERVATION_1
 
 
@@ -17,7 +17,7 @@ def counterfactual():
 
 
 def credit_assignment():
-    return query(PROMPT_CREDIT_ASSIGNMENT, TRAJECTORY_6)
+    return query(PROMPT_TD_WEIGHTING, TRAJECTORY_6)
 
 
 def redistribute():

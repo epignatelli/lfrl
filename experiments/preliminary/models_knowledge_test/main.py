@@ -1,5 +1,5 @@
 from calf.prompts import PROMPT_ENV_DESCRIPTION
-from calf.models import (
+from calf.language_models import (
     Llama7B,
     Llama13B,
     Llama70B,

@@ -1,6 +1,8 @@
 # user-specific
 .vscode/
 wandb/
+experiments/minihack/demonstrations/
+experiments/minihack/annotations/
 
 
 # Byte-compiled / optimized / DLL files

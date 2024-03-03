@@ -1,0 +1,330 @@
+I will present you with a sequence of observations and actions from the gameplay of MiniHack.
+Recall that a single observation in MiniHack has four main parts:
+a) The number of the timestep and the last action;
+b) a *message* appearing on top of the screen;
+c) a *grid of symbols* showing the positions of entities in the room and
+d) a *set of statistics* at the bottom of the screen.
+
+In the observations, the symbols are the following:
+A dot "." represents an empty space.
+A pipe "|" represent a walls.
+A dash "-" can represent either a wall or an open door.
+A plus sign "+" represents a closed door.
+A parenthesis ")" represents a key.
+
+These tasks require the agent to pickup a key, navigate to a door, and use the key to unlock the door, reaching the staircase down within the locked room.
+
+Write a brief and concise analysis describing the semantics of the trajectory strictly using information from the observations and your knowledge of MiniHack.
+Rely only on your knowledge, and do not make stuff up. If you do not know the answer to the question, explicitly say so.
+
+Finally, write a score for each action that describes the contribution of that action to reach the final observation.
+You can choose any score between 0.0 and 1.0.
+
+Report the score in a python dictionary whose keys are the time t of the timestep and the value is the corresponding score.
+
+- Timestep 0
+
+Hello Agent, welcome to NetHack!  You are a chaotic male human Rogue.
+
+
+
+
+
+
+
+
+                                         --
+                                         .|
+                                        (.|
+                                    ----..|
+                                    |..@..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 1
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(.|
+                                    ----..|
+                                    |..<@.|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 2
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +(.|
+                                    ----@.|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 3
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +..|
+                                    ----@.|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 4
+
+You see here a key named The Master Key of Thievery.
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +@.|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 5
+
+
+
+
+
+
+
+
+
+
+                                       ----
+                                       |..|
+                                       +@.|
+                                    ----..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 6
+
+Never mind.
+
+
+
+
+
+
+
+
+                                 ----------
+                                 |...>.|..|
+                                 |......@.|
+                                 |------..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 7
+
+
+
+
+
+
+
+
+
+
+                                 ----------
+                                 |...>.|..|
+                                 |.....@..|
+                                 |------..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 8
+
+It's a wall.
+
+
+
+
+
+
+
+
+                                 ----------
+                                 |...>.|..|
+                                 |....@...|
+                                 |------..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 9
+
+Never mind.
+
+
+
+
+
+
+
+
+                                 ----------
+                                 |...>.|..|
+                                 |...@....|
+                                 |------..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
+
+
+- Timestep 10
+
+
+
+
+
+
+
+
+
+
+                                 ----------
+                                 |...@.|..|
+                                 |........|
+                                 |------..|
+                                    |..<..|
+                                    |.....|
+                                    -------
+
+
+
+
+
+
+Agent the Footpad              St:18/03 Dx:17 Co:10 In:12 Wi:11 Ch:8 Chaotic S:
+Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
