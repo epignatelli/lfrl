@@ -1,8 +1,15 @@
+from __future__ import annotations
+
 from typing import List, Dict
+from jax import Array
+import jax
 import torch
+import jax.numpy as jnp
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    FlaxAutoModelForCausalLM,
+    FlaxGemmaForCausalLM,
 )
 import requests
 
@@ -39,6 +46,7 @@ class LLM:
             self.model_name,
             device_map=kwargs.pop("device_map", "auto"),
             torch_dtype=kwargs.pop("torch_dtype", torch.bfloat16),
+            attn_implementation="flash_attention_2",
             **kwargs,
         )
         self.tokenizer = tokenizer
@@ -48,32 +56,46 @@ class LLM:
 
     def chat(
         self,
-        conversation: List[Dict[str, str]],
+        conversation: List[Dict[str, str]] | List[List[Dict[str, str]]],
         *,
         append_prompt: bool = False,
         **kwargs,
     ):
         with torch.no_grad():
             # encode text to tokens
-            encoding = self.tokenizer.apply_chat_template(
-                conversation,
-                tokenize=True,
-                add_generation_prompt=True,
-                return_tensors="pt",
-            ).to(  # type: ignore
-                self.model.device
+            is_batched = isinstance(conversation, list) and isinstance(
+                conversation[0], list
             )
+            if not is_batched:
+                conversation = [conversation]  # type: ignore
+
+            chats = [
+                self.tokenizer.apply_chat_template(
+                    convo,  # type: ignore
+                    tokenize=False,
+                    padding=True,
+                    truncation=True,
+                    add_generation_prompt=True,
+                )
+                for convo in conversation
+            ]
+            encoding = self.tokenizer(
+                chats,  # type: ignore
+                padding=True,
+                return_tensors="pt",
+            ).to(self.model.device)
             # prompt the model
             max_new_tokens = kwargs.pop("max_new_tokens", 256)
             generated_tokens = self.model.generate(
-                encoding,
+                **encoding,
                 pad_token_id=self.tokenizer.eos_token_id,
                 max_new_tokens=max_new_tokens,
                 **kwargs,
             )
             # get only the new tokens
             if not append_prompt:
-                generated_tokens = generated_tokens[:, encoding.shape[-1] :]
+                input_len = encoding["input_ids"].shape[-1]  # type: ignore
+                generated_tokens = generated_tokens[:, input_len:]
             # decode the tokens to text
             generated_text = self.tokenizer.batch_decode(
                 generated_tokens,
@@ -132,6 +154,77 @@ class Falcon7B(LLM):
 class Fuyu8B(LLM):
     def __init__(self):
         super().__init__("adept/fuyu-8b")
+
+
+class Gemma7B(LLM):
+    def __init__(self):
+        super().__init__("google/gemma-7b-it")
+
+    # def init(self, **kwargs):
+    #     print("o" + "-" * 79)
+    #     print(f"Loading {self.model_name}...")
+    #     tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+    #     model = FlaxGemmaForCausalLM.from_pretrained(
+    #         self.model_name,
+    #         dtype=jnp.bfloat16,  # type: ignore
+    #         revision="flax",
+    #         **kwargs,
+    #     )
+    #     self.tokenizer = tokenizer
+    #     self.model = model
+    #     self.patch_chat_template()
+    #     print(f"{self.model_name} loaded")
+
+    # def chat(
+    #     self,
+    #     conversation: List[Dict[str, str]] | List[List[Dict[str, str]]],
+    #     *,
+    #     append_prompt: bool = False,
+    #     **kwargs,
+    # ):
+    #     # encode text to tokens
+    #     is_batched = isinstance(conversation, list) and isinstance(
+    #         conversation[0], list
+    #     )
+    #     if not is_batched:
+    #         conversation = [conversation]  # type: ignore
+
+    #     chats = []
+    #     for convo in conversation:
+    #         chats.append(
+    #             self.tokenizer.apply_chat_template(
+    #                 convo,  # type: ignore
+    #                 tokenize=False,
+    #                 padding=True,
+    #                 truncation=True,
+    #                 add_generation_prompt=True,
+    #             )
+    #         )
+    #     encoding = self.tokenizer(
+    #         chats,
+    #         padding=True,
+    #         truncation=True,
+    #         return_tensors="jax",
+    #     )
+    #     # prompt the model
+    #     max_new_tokens = kwargs.pop("max_new_tokens", 256)
+    #     generate_jit = jax.jit(
+    #         lambda x: self.model.generate(
+    #             x,
+    #             max_new_tokens=max_new_tokens,
+    #             pad_token_id=self.tokenizer.eos_token_id,
+    #         )
+    #     )
+    #     generated_tokens = generate_jit(encoding["input_ids"])
+    #     # get only the new tokens
+    #     if not append_prompt:
+    #         generated_tokens = generated_tokens[:, encoding.shape[-1] :]
+    #     # decode the tokens to text
+    #     generated_text = self.tokenizer.batch_decode(
+    #         generated_tokens,
+    #         skip_special_tokens=True,
+    #     )
+    #     return generated_text
 
 
 class Parrot(LLM):

@@ -311,7 +311,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 TRAJECTORY_2 = """\
 - Timestep 0
-Action: east
 
 Hello Agent, welcome to NetHack!  You are a chaotic male human Rogue.
 
@@ -340,7 +339,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 1
-Action: east
 
 
 
@@ -369,7 +367,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 2
-Action: north
 
 
 
@@ -398,7 +395,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 3
-Action: west
 
 It's a wall.
 
@@ -427,7 +423,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 4
-Action: north
 
 You see here a key named The Master Key of Thievery.
 
@@ -456,7 +451,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 5
-Action: pickup
 
 
 
@@ -485,7 +479,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 6
-Action: search
 
 Never mind.
 
@@ -514,7 +507,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 7
-Action: west
 
 
 
@@ -543,7 +535,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 8
-Action: apply
 
 It's a wall.
 
@@ -572,7 +563,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 9
-Action: west
 
 Never mind.
 
@@ -601,7 +591,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 
 - Timestep 10
-Action: north
 
 
 
@@ -631,7 +620,6 @@ Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0"""
 
 TRAJECTORY_3 = """\
 Timestep 0
-Action: north
 
 Hello Agent, welcome to NetHack!  You are a chaotic male human Rogue.
 
@@ -1380,19 +1368,10 @@ Reward: 1.0
 
 
 TRAJECTORY_5 = """\
-Timestep 0
-Action: south
-Reward: 0.0
-
-Be careful!  New moon tonight.
-
-
-
-
-
-
-
-
+{
+   Timestep: 0,
+   Action: south,
+   Observation:
                                        ----
                                        |@.|
                                        +..|
@@ -1400,28 +1379,11 @@ Be careful!  New moon tonight.
                                         ..|
                                         ..|
                                        ----
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 1
-Action: south
-Reward: 0.0
-
-
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 1,
+   Action: south,
+   Observation:
                                        ----
                                        |<.|
                                        +@.|
@@ -1429,28 +1391,11 @@ Reward: 0.0
                                         ..|
                                        ...|
                                       -----
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 2
-Action: pickup
-Reward: 0.0
-
-You see here a key named The Master Key of Thievery.
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 2,
+   Action: pickup,
+   Observation:
                                        ----
                                        |<.|
                                        +..|
@@ -1458,28 +1403,11 @@ You see here a key named The Master Key of Thievery.
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 3
-Action: north
-Reward: 0.0
-
-g - a key named The Master Key of Thievery.
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 3,
+   Action: north,
+   Observation:
                                        ----
                                        |<.|
                                        +..|
@@ -1487,28 +1415,11 @@ g - a key named The Master Key of Thievery.
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 4
-Action: apply
-Reward: 0.0
-
-
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 4,
+   Action: apply,
+   Observation:
                                        ----
                                        |<.|
                                        +@.|
@@ -1516,28 +1427,11 @@ Reward: 0.0
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 5
-Action: west
-Reward: -0.01
-
-Never mind.
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 5,
+   Action: west,
+   Observation:
                                     -- ----
                                     |> |<.|
                                     |..-@.|
@@ -1545,28 +1439,11 @@ Never mind.
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 6
-Action: west
-Reward: 0.0
-
-
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 6,
+   Action: west,
+   Observation:
                                     -------
                                     |>.|<.|
                                     |..@..|
@@ -1574,28 +1451,35 @@ Reward: 0.0
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 7
-Action: west
-Reward: 0.0
-
-
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 7,
+   Action: pickup,
+   Observation:
+                                    -------
+                                    |>.|<.|
+                                    |..@..|
+                                    ----..|
+                                      ....|
+                                    |.....|
+                                    -------
+},
+{
+   Timestep: 8,
+   Action: apply,
+   Observation:
+                                    -------
+                                    |>.|<.|
+                                    |..@..|
+                                    ----..|
+                                      ....|
+                                    |.....|
+                                    -------
+},
+{
+   Timestep: 9,
+   Action: west,
+   Observation:
                                     -------
                                     |>.|<.|
                                     |.@-..|
@@ -1603,28 +1487,11 @@ Reward: 0.0
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 8
-Action: north
-Reward: 0.0
-
-
-
-
-
-
-
-
-
-
+},
+{
+   Timestep: 10,
+   Action: north,
+   Observation:
                                     -------
                                     |>.|<.|
                                     |@.-..|
@@ -1632,49 +1499,11 @@ Reward: 0.0
                                       ....|
                                     |.....|
                                     -------
-
-
-
-
-
-
-Agent the Footpad              St:12 Dx:18 Co:15 In:9 Wi:12 Ch:9 Chaotic S:0
-Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
-
-Timestep 9
-Action:
-Reward: 1.0
-
-
- No  Points     Name                                                   Hp [max]
-
-            0  Agent-Rog-Hum-Mal-Cha quit in The Dungeons of Doom on
-
-              level 1.                                               12  [12]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                                """
+}"""
 
 
 TRAJECTORY_6 = """\
 Timestep 0
-Action: north
-Reward: 0.0
 
 Be careful!  New moon tonight.
 
@@ -1702,8 +1531,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 1
-Action: south
-Reward: -0.01
 
 It's a wall.
 
@@ -1731,8 +1558,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 2
-Action: east
-Reward: 0.0
 
 You see here a key named The Master Key of Thievery.
 
@@ -1760,8 +1585,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 3
-Action: west
-Reward: -0.01
 
 It's a wall.
 
@@ -1789,8 +1612,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 4
-Action: pickup
-Reward: 0.0
 
 
 
@@ -1818,8 +1639,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 5
-Action: apply
-Reward: -0.01
 
 There is nothing here to pick up.
 
@@ -1847,8 +1666,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 6
-Action: east
-Reward: -0.01
 
 Never mind.
 
@@ -1876,8 +1693,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 7
-Action: west
-Reward: 0.0
 
 You see here a key named The Master Key of Thievery.
 
@@ -1905,8 +1720,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 8
-Action: pickup
-Reward: 0.0
 
 
 
@@ -1934,8 +1747,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 9
-Action: north
-Reward: -0.01
 
 There is nothing here to pick up.
 
@@ -1963,8 +1774,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 10
-Action: north
-Reward: 0.0
 
 
 
@@ -1992,8 +1801,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 11
-Action: south
-Reward: -0.01
 
 It's a wall.
 
@@ -2021,8 +1828,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 12
-Action: west
-Reward: 0.0
 
 
 
@@ -2050,8 +1855,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 13
-Action: pickup
-Reward: -0.01
 
 This door is locked.
 
@@ -2079,8 +1882,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 14
-Action: apply
-Reward: -0.01
 
 There is nothing here to pick up.
 
@@ -2108,8 +1909,6 @@ Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
 Timestep 15
-Action: east
-Reward: -0.01
 
 Never mind.
 
@@ -2136,9 +1935,7 @@ Never mind.
 Agent the Footpad              St:17 Dx:18 Co:13 In:8 Wi:13 Ch:6 Chaotic S:0
 Dlvl:1 $:0 HP:12(12) Pw:2(2) AC:7 Xp:1/0
 
-Timestep 15
-Action:
-Reward: 0.0
+Timestep 16
 
 You see here a key named The Master Key of Thievery.
 

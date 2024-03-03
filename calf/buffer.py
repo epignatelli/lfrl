@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-from typing import Generic,TypeVar
+from typing import Generic, List,TypeVar
 from flax import struct
 
 import jax
 from jax.random import KeyArray
 import jax.numpy as jnp
 
+from helx.base.mdp import Timestep
 
-T = TypeVar("T")
 
-
-class RingBuffer(struct.PyTreeNode, Generic[T]):
+class RingBuffer(struct.PyTreeNode):
     """A circular buffer used for Experience Replay (ER):
     Li, L., 1993, https://apps.dtic.mil/sti/pdfs/ADA261434.pdf.
     Use the `CircularBuffer.init` method to construct a buffer."""
 
-    capacity: int = struct.field(pytree_node=False)
+    capacity: int
     """Returns the capacity of the buffer."""
-    elements: T = struct.field(pytree_node=True)
+    elements: Timestep
     """The elements currently stored in the buffer."""
-    idx: jax.Array = struct.field(pytree_node=True)
+    idx: jax.Array
     """The index of the next element to be added to the buffer."""
 
     @classmethod
-    def create(cls, element: T, capacity: int, n_steps: int=1) -> RingBuffer:
+    def create(cls, element: Timestep, capacity: int, n_steps: int=1) -> RingBuffer:
         """Constructs a RingBuffer class."""
         # reserve memory
         uninitialised_elements = jax.tree_map(
@@ -40,11 +39,10 @@ class RingBuffer(struct.PyTreeNode, Generic[T]):
             idx=jnp.asarray(0),
         )
 
-    def size(self) -> jax.Array:
-        """Returns the number of elements currently stored in the buffer."""
-        return self.idx
+    def __len__(self) -> int:
+        return self.idx  # type: ignore
 
-    def add(self, item: T) -> RingBuffer:
+    def add(self, item: Timestep) -> RingBuffer:
         """Adds a single element to the buffer. If the buffer is full,
         the oldest element is overwritten."""
         idx = self.idx % self.capacity
@@ -54,11 +52,14 @@ class RingBuffer(struct.PyTreeNode, Generic[T]):
             elements=elements,
         )
 
-    def sample(self, key: KeyArray, n: int = 1) -> T:
+    def sample(self, key: KeyArray, n: int = 1) -> Timestep:
         """Samples `n` elements uniformly at random from the buffer,
         and stacks them into a single pytree.
         If `n` is greater than state.idx,
         the function returns uninitialised elements"""
-        indices = jax.random.randint(key=key, shape=(n,), minval=0, maxval=self.idx)
-        items = jax.tree_map(lambda x: x[indices], self.elements)
+        k1, k2 = jax.random.split(key)
+        seq_len = self.elements.t.shape[-1]
+        batch_idx = jax.random.randint(key=k1, shape=(n,), minval=0, maxval=self.idx)
+        time_idx = jax.random.randint(key=k2, shape=(n,), minval=0, maxval=seq_len)
+        items = jax.tree_map(lambda x: x[batch_idx, time_idx], self.elements)
         return items

@@ -3,7 +3,7 @@ from typing import Dict, List
 import requests
 import re
 
-from .prompts import PROMPT_INTRINSIC_REWARD, PROMPT_ENV_DESCRIPTION, PROMPT_CREDIT_ASSIGNMENT
+from .prompts import PROMPT_INTRINSIC_REWARD, PROMPT_ENV_DESCRIPTION, PROMPT_TD_WEIGHTING
 
 
 CA_PATTERN = re.compile(r"\{\s*\"timestep-\d\"\s*:\s*\d*.\d*\s*\}", re.IGNORECASE)
@@ -38,7 +38,7 @@ def ask_credit(
     host: str = "localhost",
     port: int = 5000,
 ) -> List[str]:
-    prompt = PROMPT_CREDIT_ASSIGNMENT.format(env_description)
+    prompt = PROMPT_TD_WEIGHTING.format(env_description)
     prompts = ["\n\n".join([prompt, obs]) for obs in observations]
     return ask(prompts, host=host, port=port)
 

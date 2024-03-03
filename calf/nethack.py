@@ -13,7 +13,6 @@ from gym.utils.step_api_compatibility import (
 )
 import gym.core
 from nle.nethack import actions as nethack_actions
-from minihack import MiniHack
 
 import jax
 from jax import Array
@@ -25,15 +24,34 @@ from helx.envs.gym import GymWrapper
 from helx.base.spaces import Space, Discrete, Continuous
 
 
-class UndictWrapper(gym.core.ObservationWrapper):
+class UndictWrapper(gym.core.Wrapper):
     def __init__(self, env: gym.Env, key: str):
         super().__init__(env)
         assert isinstance(env.observation_space, gym.spaces.Dict)
-        self.key = key
-        self.observation_space = self.observation_space[key]  # type: ignore
+        self.main_key = key
+        self.observation_space = env.observation_space[key]
 
-    def observation(self, obs):
-        return obs[self.key]
+    def reset(self, seed, options={}):
+        obs, info = self.env.reset()
+        assert isinstance(
+            obs, dict
+        ), "UndictWrapper requires observations to be a dictionary, got {}".format(
+            type(obs)
+        )
+        main_obs = obs.pop(self.main_key)
+        info["observations"] = obs
+        return main_obs, info
+
+    def step(self, action):
+        obs, reward, term, trunc, info = self.env.step(action)  # type: ignore
+        assert isinstance(
+            obs, dict
+        ), "UndictWrapper requires observations to be a dictionary, got {}".format(
+            type(obs)
+        )
+        main_obs = obs.pop(self.main_key)
+        info["observations"] = obs
+        return (main_obs, reward, term, trunc, info)
 
 
 class MiniHackWrapper(GymWrapper):
@@ -51,10 +69,10 @@ class MiniHackWrapper(GymWrapper):
         t = jnp.zeros((num_envs,))
         action = jnp.zeros((num_envs,)) - 1
         timestep = self._wrap_timestep(timestep, action=action, t=t)
-        timestep.info['return'] = timestep.reward
+        timestep.info["return"] = timestep.reward
         return timestep
 
-    def _step(self, key: KeyArray, timestep: Timestep, action: Array) -> Timestep:
+    def step(self, key: KeyArray, timestep: Timestep, action: Array) -> Timestep:
         next_timestep = self.env.step(np.asarray(action))
         t = jnp.asarray((timestep.t + 1) * timestep.is_mid(), dtype=jnp.int32)
         action = (action * timestep.is_mid()) - (timestep.is_last())
@@ -111,7 +129,9 @@ class MiniHackWrapper(GymWrapper):
         obs = jtu.tree_map(lambda x: jnp.asarray(x, self.observation_space.dtype), obs)
         reward = jnp.asarray(reward, dtype=self.reward_space.dtype)
         action = jnp.asarray(action, dtype=self.action_space.dtype)
-        info = {}
+        clean_info = {}
+        if "observations" in info:
+            clean_info["observations"] = info["observations"]  # type: ignore
         return Timestep(
             observation=obs,
             reward=reward,
@@ -119,7 +139,7 @@ class MiniHackWrapper(GymWrapper):
             action=action,
             t=jnp.asarray(t, dtype=jnp.int32),
             state=None,
-            info=info,
+            info=clean_info,
         )
 
 
