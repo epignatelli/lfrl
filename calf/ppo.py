@@ -196,11 +196,7 @@ class PPO(Agent):
         time_idx = jax.random.randint(
             key, shape=(batch_size,), minval=0, maxval=episode_length
         )
-        transitions_t = episodes[actor_idx, time_idx]  # contains s_{t+1}
-        transitions_tp1 = episodes[actor_idx, time_idx + 1]  # contains s_{t+2}
-        return jtu.tree_map(
-            lambda *x: jnp.stack(x, axis=1), transitions_t, transitions_tp1
-        )  # (batch_size, 2)
+        return episodes.at_time[actor_idx, time_idx]  # (batch_size,)
 
     def loss(
         self, params: Params, transition: Timestep
@@ -208,12 +204,11 @@ class PPO(Agent):
         # make sure the transition has the required info
         assert "advantage" in transition.info
         assert "log_prob" in transition.info
-        # stop gradient on advantage and log_prob
-        observation = transition.observation[0]  # s_t
-        advantage = stop_gradient(transition.info["advantage"][0])  # A(s_t, a_t)
-        action_value_old = stop_gradient(transition.info["value"][0])  # v_{k-1}(s_t)
-        action = stop_gradient(transition.action[1])  # a_t
-        log_prob_old = stop_gradient(transition.info["log_prob"][0])
+        observation = transition.observation  # s_t
+        advantage = stop_gradient(transition.info["advantage"])  # A(s_t, a_t)
+        action_value_old = stop_gradient(transition.info["value"])  # v_{k-1}(s_t)
+        action = stop_gradient(transition.action)  # a_t
+        log_prob_old = stop_gradient(transition.info["log_prob"])
         # critic loss
         value = self.value_fn(params, observation)  # v(s_t)
         critic_loss = jnp.abs(value - advantage)

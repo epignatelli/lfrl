@@ -34,7 +34,6 @@ torch.manual_seed(args.seed)
 
 import os
 from stat import S_IREAD, S_IRGRP, S_IROTH
-from dataclasses import asdict
 import pickle
 
 import gym
@@ -50,9 +49,10 @@ import flax.linen as nn
 from helx.base.modules import Flatten
 from helx.base.mdp import Timestep, StepType
 
-from calf.trial import Agent, Experiment
+from calf.trial import Experiment
 from calf.calf import HParams, PPO
 from calf.environment import UndictWrapper, MiniHackWrapper
+from calf.io import get_next_valid_path
 
 
 def extract_episode_from_stream(experience: Timestep):
@@ -89,12 +89,19 @@ def extract_n_steps_from_stream(
             continue
 
         start_idx = max(0, end_idx - transition_len)
-        segment = experience[batch_idx, start_idx + 1 : end_idx + 1]
+        # experience as canonical structure, so we index it via `experience.at`
+        segment = experience[batch_idx].at_time[start_idx: end_idx]
+        # arrays in `segment` are now aligned in time (s_0, a_0, ..., s_T, a_T)
 
         # if there is a start in segment, take the latest one
         start_idx = jnp.where(segment.is_first())[0]
         if len(start_idx) > 0:
             segment = segment[start_idx[-1] :]
+
+        # if there is a truncation, take the lastest one
+        trunc_idx = jnp.where(segment.step_type == jnp.asarray(1))[0]
+        if len(trunc_idx) > 0:
+            segment = segment[trunc_idx[-1] :]
 
         # set mask
         segment.info["mask"] = jnp.ones_like(segment.t)
@@ -113,7 +120,7 @@ def extract_n_steps_from_stream(
 
         assert len(segment.t) == transition_len
         if len(jnp.where(segment.step_type == StepType.TERMINATION)[0]) != 1:
-            print("Multiple ends in segment", segment)
+            print("Multiple ends in segment", segment.step_type)
 
         segments.append(segment)
 
@@ -124,14 +131,10 @@ class DemoExperiment(Experiment):
     def __init__(self, name: str, config: dict):
         super().__init__(name, config)
         # prepare for saving
-        out_dir = config["out_dir"]
-        os.makedirs(out_dir, exist_ok=True)
-        filename, i = "demonstrations", 0
-        out_path = os.path.join(out_dir, filename)
-        while os.path.exists(f"{out_path}_{i}.pkl"):
-            i += 1
-        out_path = f"{out_path}_{i}.pkl"
-
+        filepath = os.path.join(config["out_dir"], "demonstrations.pkl")
+        out_path = get_next_valid_path(filepath)
+        # init
+        self.out_path = out_path
         self.file = open(out_path, "ab")
         self.buffer_len = jnp.asarray(0)
 
@@ -152,7 +155,7 @@ class DemoExperiment(Experiment):
         # close the file
         self.file.close()
         # set demo file in readonly mode to avoid disasters (yes, it happened, once!)
-        os.chmod(self.config["out_path"], S_IREAD | S_IRGRP | S_IROTH)
+        os.chmod(self.out_path, S_IREAD | S_IRGRP | S_IROTH)
         return
 
 
@@ -188,6 +191,7 @@ def main():
         max_episode_steps=100,
         num_envs=args.n_actors,
         asynchronous=True,
+        seeds=[args.seed] * args.n_actors
     )
     env = UndictWrapper(env, key=args.observation_key)
     env = MiniHackWrapper.wraps(env)

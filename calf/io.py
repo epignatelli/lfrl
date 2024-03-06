@@ -6,19 +6,18 @@ from helx.base.mdp import Timestep
 
 
 def get_next_valid_path(filepath: str, extension: str = "") -> str:
-    if not os.path.exists(filepath):
-        return filepath
-
     basedir = os.path.dirname(filepath)
     filename = os.path.basename(filepath)
     name, ext = os.path.splitext(filename)
 
     if extension:
+        if extension[0] != ".":
+            extension = "." + extension
         ext = extension
 
     i = 0
     while True:
-        candidate = f"{os.path.join(basedir, filename)}_{i}.{ext}"
+        candidate = f"{os.path.join(basedir, name)}_{i}{ext}"
         if not os.path.exists(candidate):
             break
         i += 1
