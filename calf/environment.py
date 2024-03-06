@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import gym
@@ -22,6 +22,28 @@ import jax.tree_util as jtu
 from helx.base.mdp import Timestep, StepType
 from helx.envs.gym import GymWrapper
 from helx.base.spaces import Space, Discrete, Continuous
+
+from .io import load_pickle_stream
+
+
+class LLMTableWrapper(gym.Wrapper):
+    def __init__(self, table_path: str):
+        print(f"Loading LLM reward table from {table_path}")
+        stream: List[Dict[Tuple[int, int, int], int]] = load_pickle_stream(table_path)
+        table = {}
+        for dictionary in stream:
+            for key in dictionary:
+                table[key] = table.get(key, 0) + dictionary[key]
+        self.table = table
+
+    def step(self, action):
+        timestep = self.env.step(action)
+        timestep = convert_to_terminated_truncated_step_api(timestep)
+        obs, reward, term, trunc, info = timestep
+        stats = obs["blstats"]
+        key = (stats[0], stats[1], stats[12])
+        reward += self.table.get(key, 0)
+        return obs, reward, term, trunc, info
 
 
 class UndictWrapper(gym.core.Wrapper):
@@ -158,10 +180,10 @@ ACTIONS_MAP = {
     None: ["none", ""],
     nethack_actions.UnsafeActions.HELP: ["help", "?"],
     nethack_actions.UnsafeActions.PREVMSG: ["previous message", "^p"],
-    nethack_actions.CompassDirection.N: ["north", "k"],
-    nethack_actions.CompassDirection.E: ["east", "l"],
-    nethack_actions.CompassDirection.S: ["south", "j"],
-    nethack_actions.CompassDirection.W: ["west", "h"],
+    nethack_actions.CompassDirection.N: ["north", "k"],  # type: ignore
+    nethack_actions.CompassDirection.E: ["east", "l"],  # type: ignore
+    nethack_actions.CompassDirection.S: ["south", "j"],  # type: ignore
+    nethack_actions.CompassDirection.W: ["west", "h"],  # type: ignore
     nethack_actions.CompassIntercardinalDirection.NE: ["northeast", "u"],
     nethack_actions.CompassIntercardinalDirection.SE: ["southeast", "n"],
     nethack_actions.CompassIntercardinalDirection.SW: ["southwest", "b"],

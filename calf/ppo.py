@@ -185,10 +185,11 @@ class PPO(Agent):
         assert episodes.t.ndim == 2, "episodes.ndim must be 2, got {} instead.".format(
             episodes.t.ndim
         )
-        # sample transitions
         batch_size = self.hparams.batch_size
+        # sample transitions
+        batch_len = episodes.t.shape[0]
         actor_idx = jax.random.randint(
-            key, shape=(batch_size,), minval=0, maxval=self.hparams.n_actors
+            key, shape=(batch_size,), minval=0, maxval=batch_len
         )
         # exclude last timestep (-1) as it was excluded from the advantage computation
         episode_length = episodes.t.shape[1]
@@ -249,17 +250,20 @@ class PPO(Agent):
         }
         return loss, log
 
-    @jax.jit
+    @partial(jax.jit, static_argnums=2)
     def update(
-        self, episodes: Timestep, *, key: KeyArray
+        self, episodes: Timestep, n_epochs: int | None = None, *, key: KeyArray
     ) -> Tuple[PPO, Dict[str, Array]]:
         def batch_loss(params, transitions):
             out = jax.vmap(self.loss, in_axes=(None, 0))(params, transitions)
             out = jtu.tree_map(lambda x: x.mean(axis=0), out)
             return out
 
+        if n_epochs is None:
+            n_epochs = self.hparams.n_epochs
+
         params, train_state, log = self.params, self.train_state, {}
-        for _ in range(self.hparams.n_epochs):
+        for _ in range(n_epochs):
             # calcualte GAE with new (updated) value function and inject in timestep
             episodes = jax.vmap(self.evaluate_experience)(episodes)
             # sample batch of transitions

@@ -11,7 +11,7 @@ annotate:
   max_new_tokens: 512
   url: "http://localhost:5000/respond"
   batch_size: 128
-calf:
+run:
   n_actors: 8
   budget: 10000000
   env_name: "MiniHack-Room-5x5-v0"

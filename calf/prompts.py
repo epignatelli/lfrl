@@ -71,20 +71,26 @@ Report the score in a python dictionary whose keys are the time of the timestep 
 """
 
 PROMPT_IDENTIFY_SUBGOALS = """\
-Environment: The environment is MiniHack. In each observation, symbols represent the following items:
+The environment is MiniHack. In each observation, symbols represent the following items:
 # "." represents a floor tile.
 # "|" represent a walls.
 # "-" can represent either a wall or an open door.
 # "+" represents a closed door. Doors can be locked, and require a key to open.
 # ")" represents a key. Keys can open doors.
 
+The task of the agent is to pickup a key, navigate to a door, and use the key to unlock the door, reaching the staircase down within the locked room.
+
 Observation Sequence:
 {}
 
 Final Return: {}
 
-Task: Your task is to identify key sub-goals in the trajectory below, if there is any.\
-Return the timestep at which these are achieved in a python dictionary."""
+Break down the task of the agent into subgoals.
+Now, consider the following (partial) trajectory, which might or might not contain these subgoals.
+Determine if any of the subgoal you identified is achieved in a state of the trajectory.
+Finally, provide the time at which the option terminated with a success as a python dictionary.
+I will not consider anything that is not in the dictionary.
+"""
 
 
 PROMPT_REDISTRIBUTION_ALT = """\
@@ -132,6 +138,23 @@ Report the credit in a python dictionary whose keys are the time t of the timest
 {}
 
 {}
+"""
+
+
+PROMPT_MESSAGES = """\
+I will present you with a gameplay of MiniHack.
+The task of the agent is to pickup a key, navigate to a door, use the key to unlock the door, and reach the staircase down within the locked room.
+
+I will provide you with a sequence of timesteps. Each timestep is made of:
+- The time
+- The action taken by the agent
+- A message from the game
+
+Your task is to analyse the sequence of timesteps and redistribute the final return to each step in the trajectory. \
+Credit each message proportionally to how much that timestep influenced the final return.
+Pay particular attention to actions that are significantly delayed from the final return and that have made the greatest difference in contributing to it.
+
+Return the results in a python dictionary with the timesteps as keys and the credits as values.
 """
 
 

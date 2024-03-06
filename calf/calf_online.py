@@ -22,7 +22,7 @@ from helx.envs.environment import Environment
 from .prompts import PROMPT_REDISTRIBUTION
 from .ppo import PPO, HParams as PPOHparams, run_n_steps
 from .buffer import RingBuffer
-from .annotate import _compose_prompt, query_llm, _parse_redistribution,
+from .annotate import compose_prompt, annotate_rewards, parse_redistribution,
 
 
 class HParams(PPOHparams):
@@ -120,7 +120,7 @@ class CALF(PPO):
         episodes = jtu.tree_map(lambda x: jnp.stack(x, axis=0), episodes)
 
         # query LLM
-        rewards = query_llm(episodes, self.hparams.max_new_tokens)
+        rewards = annotate_rewards(episodes, self.hparams.max_new_tokens)
 
         # replace rewards
         beta = self.hparams.llm_reward_coefficient

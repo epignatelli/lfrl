@@ -1,6 +1,7 @@
 from . import (
+    io,
+    environment,
     language_models,
-    nethack,
     prompts,
     questions,
     buffer,

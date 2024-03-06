@@ -14,6 +14,9 @@ argparser.add_argument("--iteration_size", type=int, default=2048)
 argparser.add_argument("--discount", type=float, default=0.99)
 argparser.add_argument("--lambda_", type=float, default=0.95)
 argparser.add_argument("--observation_key", type=str, default="pixel_crop")
+argparser.add_argument(
+    "--buffer_path", type=str, default="/scratch/uceeepi/calf/redistribution_alt/annotations_1.pkl2"
+)
 args = argparser.parse_args()
 
 import random
@@ -34,9 +37,9 @@ import flax.linen as nn
 
 from helx.base.modules import Flatten
 
-from calf.trial import run_experiment
+from calf.trial import Experiment
 from calf.calf import HParams, CALF
-from calf.nethack import UndictWrapper, MiniHackWrapper
+from calf.environment import UndictWrapper, MiniHackWrapper
 
 
 def main():
@@ -49,6 +52,7 @@ def main():
         discount=args.discount,
         lambda_=args.lambda_,
         iteration_size=args.iteration_size,
+        buffer_path=args.buffer_path,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -88,8 +92,9 @@ def main():
     agent = CALF.init(env, hparams, encoder, key=key)
 
     # run experiment
-    kwargs = {**args.__dict__, **{"phase": "calf"}}
-    run_experiment(agent, env, key, "calf", **kwargs)
+    config = {**args.__dict__, **{"phase": "calf"}}
+    experiment = Experiment("calf", config)
+    experiment.run(agent, env, key)
 
 
 if __name__ == "__main__":

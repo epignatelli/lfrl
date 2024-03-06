@@ -8,7 +8,7 @@ from jax import Array
 import rlax
 import jax.tree_util as jtu
 from nle import nethack
-from calf.nethack import UndictWrapper, MiniHackWrapper
+from calf.environment import UndictWrapper, MiniHackWrapper
 from calf.ppo import PPO, HParams
 import flax.linen as nn
 from helx.base.mdp import Timestep, StepType

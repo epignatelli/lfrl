@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 from functools import partial
-from abc import abstractmethod
-from dataclasses import asdict
+import time
 
 import numpy as np
 import wandb
@@ -19,7 +18,7 @@ from flax import struct
 from flax.core.scope import VariableDict as Params
 import distrax
 from helx.envs.environment import Environment, Timestep
-import optax
+
 
 class HParams(struct.PyTreeNode):
     discount: float
@@ -54,6 +53,99 @@ class Agent(struct.PyTreeNode):
     def update(
         self, trajectories: Timestep, *, key: KeyArray
     ) -> Tuple[Agent, Dict[str, Array]]: ...
+
+
+class Experiment:
+    def __init__(self, name: str, config: dict):
+        self.name = name
+        self.config = config
+        wandb.init(project=name, config=config)
+
+    def collect_experience(
+        self, agent: Agent, env: Environment, timestep: Timestep, *, key: KeyArray
+    ) -> Tuple[Timestep, Timestep]:
+        experience, timestep = agent.collect_experience(env, timestep, key=key)
+        return experience, timestep
+
+    def update(
+        self, agent: Agent, experience: Timestep, *, key: KeyArray
+    ) -> Tuple[Agent, Dict[str, Array]]:
+        agent, log = agent.update(experience, key=key)
+        return agent, log
+
+    def close(self): ...
+
+    def run(
+        self,
+        agent: Agent,
+        env: Environment,
+        key: KeyArray,
+        render_log_rate: int = 1_000_000,
+    ) -> Agent:
+        budget = self.config["budget"]
+
+        frames = jnp.asarray(0)
+        iteration = jnp.asarray(0)
+        timestep = env.reset(key)
+        if "return" not in timestep.info:
+            timestep.info["return"] = timestep.reward
+        while frames < budget:
+            # step
+            start_time = time.time()
+            k1, k2, key = jax.random.split(key, num=3)
+            experience, timestep = self.collect_experience(agent, env, timestep, key=k1)
+            agent, log = self.update(agent, experience, key=k2)
+
+            # log frames and iterations
+            log["frames"] = frames
+            log["iteration"] = iteration
+            log["fps"] = jnp.asarray(experience.t.size / (time.time() - start_time))
+
+            # log episode length
+            final_t = experience.t[experience.is_last()]
+            if final_t.size > 0:
+                log["train/episode_length"] = jnp.mean(final_t)
+                log["train/min_episode_length"] = jnp.min(final_t)
+                log["train/max_episode_length"] = jnp.max(final_t)
+
+            # log rewards
+            log["train/average_reward"] = jnp.mean(experience.reward)
+            log["train/min_reward"] = jnp.min(experience.reward)
+            log["train/max_reward"] = jnp.max(experience.reward)
+
+            # log returns
+            if "return" in experience.info:
+                return_ = experience.info["return"]
+                return_ = return_[experience.is_last()]
+                if return_.size > 0:
+                    log["train/return"] = jnp.mean(return_)
+                    log["train/min_return"] = jnp.min(return_)
+                    log["train/max_return"] = jnp.max(return_)
+
+            # log success rates
+            success_hits = jnp.sum(experience.reward == 1.0, dtype=jnp.int32)
+            log["train/success_hits"] = success_hits
+            log["train/success_rate"] = success_hits / jnp.sum(experience.is_last())
+
+            # log render
+            if frames % render_log_rate <= (agent.hparams.iteration_size + 1):
+                start_t = experience.t[0][experience.is_first()[0]]
+                end_t = experience.t[0][experience.is_last()[0]]
+                if start_t.size > 0 and end_t.size > 0:
+                    render = experience.observation[0, start_t[0] : end_t[0]]
+                    log["train/render"] = wandb.Video(  #  type: ignore
+                        np.asarray(render.transpose(0, 3, 1, 2)), fps=1
+                    )
+
+            # print and push log
+            print(log)
+            wandb.log(log)
+
+            frames += experience.t.size
+            iteration += 1
+
+        self.close()
+        return agent
 
 
 def run_n_steps(
@@ -158,73 +250,3 @@ def run_episode(env: Environment, agent: Agent, *, key: KeyArray) -> Timestep:
         timestep = next_timestep
 
     return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
-
-
-def run_experiment(
-    agent: Agent,
-    env: Environment,
-    key: KeyArray,
-    project_name: str | None = None,
-    **kwargs,
-):
-    config = {**asdict(agent.hparams), **kwargs}
-    wandb.init(project=project_name, config=config)
-    budget = kwargs["budget"]
-
-    frames = jnp.asarray(0)
-    iteration = jnp.asarray(0)
-    timestep = env.reset(key)
-    if "return" not in timestep.info:
-        timestep.info["return"] = timestep.reward
-    while frames < budget:
-        # step
-        k1, k2, key = jax.random.split(key, num=3)
-        experience, timestep = agent.collect_experience(env, timestep, key=k1)
-        agent, log = agent.update(experience, key=k2)
-
-        # log frames and iterations
-        log["frames"] = frames
-        log["iteration"] = iteration
-
-        # log episode length
-        final_t = experience.t[experience.is_last()]
-        if final_t.size > 0:
-            log["train/episode_length"] = jnp.mean(final_t)
-            log["train/min_episode_length"] = jnp.min(final_t)
-            log["train/max_episode_length"] = jnp.max(final_t)
-
-        # log rewards
-        log["train/average_reward"] = jnp.mean(experience.reward)
-        log["train/min_reward"] = jnp.min(experience.reward)
-        log["train/max_reward"] = jnp.max(experience.reward)
-
-        # log returns
-        if "return" in experience.info:
-            return_ = experience.info["return"]
-            return_ = return_[experience.is_last()]
-            if return_.size > 0:
-                log["train/return"] = jnp.mean(return_)
-                log["train/min_return"] = jnp.min(return_)
-                log["train/max_return"] = jnp.max(return_)
-
-        # log success rates
-        success_hits = jnp.sum(experience.reward == 1.0, dtype=jnp.int32)
-        log["train/success_hits"] = success_hits
-        log["train/success_rate"] = success_hits / jnp.sum(experience.is_last())
-
-        # log render
-        if frames % 1_000_000 <= (agent.hparams.iteration_size + 1):
-            start_t = experience.t[0][experience.is_first()[0]]
-            end_t = experience.t[0][experience.is_last()[0]]
-            if start_t.size > 0 and end_t.size > 0:
-                render = experience.observation[0, start_t[0] : end_t[0]]
-                log["train/render"] = wandb.Video(  #  type: ignore
-                    np.asarray(render.transpose(0, 3, 1, 2)), fps=1
-                )
-
-        # print and push log
-        print(log)
-        wandb.log(log)
-
-        frames += experience.t.size
-        iteration += 1

@@ -1,29 +1,25 @@
 from __future__ import annotations
 from typing import Dict, Tuple
 
-import pickle
 from flax import struct
 from jax import Array
 import jax
 from jax.random import KeyArray
-import jax.tree_util as jtu
-import jax.numpy as jnp
 
 import flax.linen as nn
 from helx.base.mdp import Timestep
 from helx.envs.environment import Environment
 
 from .ppo import PPO, HParams as PPOHparams
+from .io import load_pickle_stream
 
 
 class HParams(PPOHparams):
-    online: bool = False
-    buffer_capacity: int = 1_000
     """The maximum number of transitions to store in the replay buffer."""
-    buffer_path: str = "./annotations/redistribution_alt.pkl"
-    transition_len: int = 10
-    max_new_tokens: int = 512
+
+    buffer_path: str = "/scratch/uceeepi/calf/redistribution_alt/demonstrations_1.pkl2"
     llm_reward_coefficient: int = 1
+    llm_reward_epochs: int = 20
 
 
 class CALF(PPO):
@@ -42,14 +38,7 @@ class CALF(PPO):
         ppo_agent = super().init(env, hparams, encoder, key=key)
         # load buffer
         train_state = ppo_agent.train_state
-        with open(hparams.buffer_path, "rb") as f:
-            buffer = tuple(pickle.load(f))
-        n_batches = len(buffer) // hparams.n_actors
-        upper = n_batches * hparams.n_actors
-        buffer = buffer[:upper]
-        buffer = jtu.tree_map(lambda *x: jnp.stack(x, axis=0), *buffer)
-        buffer = jtu.tree_map(lambda x: jnp.split(x, n_batches, axis=0), buffer)
-        train_state["buffer"] = buffer
+        train_state["buffer"] = load_pickle_stream(hparams.buffer_path)
         # create object
         self = cls(
             hparams=hparams,
@@ -60,18 +49,27 @@ class CALF(PPO):
         )
         return self
 
-    @jax.jit
     def update(
         self, experience: Timestep, *, key: KeyArray
     ) -> Tuple[PPO, Dict[str, Array]]:
         k1, k2 = jax.random.split(key)
 
         # PPO update
+        batch_idx = jax.random.randint(
+            key, shape=(self.hparams.batch_size,), minval=0, maxval=len(experience.t)
+        )
+        experience = experience[batch_idx]
         self, log_ppo = super().update(experience, key=k1)
 
-        # LLM updates
+        # CALF updates
         buffer = self.train_state["buffer"]
-        self, log_llm = super().update(buffer, key=k2)
+        batch_idx = jax.random.randint(
+            key, shape=(self.hparams.batch_size,), minval=0, maxval=len(buffer.t)
+        )
+        buffer = buffer[batch_idx]
+        self, log_llm = super().update(
+            buffer, n_epochs=self.hparams.llm_reward_epochs, key=k2
+        )
 
         # takes `log_llm[key]` if `key` exists in both
         log = {**log_ppo, **log_llm}

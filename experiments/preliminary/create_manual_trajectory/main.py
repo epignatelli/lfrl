@@ -3,7 +3,7 @@ from typing import Union
 import minihack
 import gym
 import numpy as np
-from calf.nethack import ACTIONS_MAP
+from calf.environment import ACTIONS_MAP
 from nle import nethack
 
 
