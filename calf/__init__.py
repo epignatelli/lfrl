@@ -10,7 +10,8 @@ from . import (
     calf,
     ppo,
     trial,
-    annotate
+    annotate,
+    decode
 )
 
 from .lmaas import server, client

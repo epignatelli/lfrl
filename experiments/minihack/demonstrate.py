@@ -191,7 +191,7 @@ def main():
         max_episode_steps=100,
         num_envs=args.n_actors,
         asynchronous=True,
-        seeds=[args.seed] * args.n_actors
+        seeds=[[args.seed]] * args.n_actors
     )
     env = UndictWrapper(env, key=args.observation_key)
     env = MiniHackWrapper.wraps(env)
@@ -211,14 +211,13 @@ def main():
             nn.tanh,
         ]
     )
-    key = jax.random.PRNGKey(args.seed)
+    key = jnp.asarray(jax.random.PRNGKey(args.seed))
     agent = PPO.init(env, hparams, encoder, key=key)
 
     # run experiment
     config = {**args.__dict__, **{"phase": "demo"}}
     experiment = DemoExperiment("calf", config)
     experiment.run(agent, env, key)
-    # run_experiment(agent, env, key, "calf", **args.__dict__)
 
 
 if __name__ == "__main__":

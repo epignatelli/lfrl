@@ -1,20 +1,24 @@
 from __future__ import annotations
-import json
-import pickle
 
-from typing import Dict, Generator, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Union
 import time
-import jax
 import requests
 import re
 
+import jax
 import jax.numpy as jnp
 from helx.base.mdp import Timestep
 
-from nle import nethack
-from .environment import ACTIONS_MAP
+from .prompts import PROMPT_IDENTIFY_SUBGOALS
+from .decode import decode_action, decode_message, decode_observation
 
-from calf.prompts import PROMPT_IDENTIFY_SUBGOALS
+
+@dataclass
+class Annotation:
+    prompt: str
+    response: str
+    parsed: Dict[Tuple[str, str], List[str]]
 
 
 def split(array, size):
@@ -22,15 +26,15 @@ def split(array, size):
     whose chunk length could be less than size"""
     upper = (len(array) // size + 1) * size + 1
     indices = jnp.arange(0, upper, size)
-    return [array[indices[i]:indices[i + 1]] for i in range(len(indices) - 1)]
+    return [array[indices[i] : indices[i + 1]] for i in range(len(indices) - 1)]
 
 
 def annotate_subgoals(
     episodes_batch: List[Timestep],
     max_new_tokens: int,
     url: str = "http://localhost:5000/respond",
-    seq_len: int | None= None
-) -> Dict[Tuple[int, int, int], int]:
+    seq_len: int | None = None,
+) -> List[Annotation]:
     # split into chunks of seq_len
     if seq_len is not None:
         episodes_chunks = []
@@ -46,16 +50,72 @@ def annotate_subgoals(
     responses = batch_query_llm(prompts, max_new_tokens, url)
 
     # parse subgoals
-    parsed = batch_parse_response(responses)
-    rewarding_states = {}
-    for dic in parsed:
-        if dic is not None:
-            times = list(dic.values())
-            for t in times:
-                stats = episodes_batch[t].info["observations"]["blstats"]
-                key = (stats[0], stats[1], stats[12])  # x, y, d
-                rewarding_states[key] = 1
-    return rewarding_states
+    annotations = parse_subgoals(prompts, responses, episodes_batch)
+    return annotations
+
+
+def parse_subgoals(
+    prompts: List[str], responses: List[str], episodes: List[Timestep]
+) -> List[Annotation]:
+    parsed_response = batch_parse_response(responses)
+    annotations = []
+    # for each response in the batch
+    for i, _ in enumerate(parsed_response):
+        goals_dic = parsed_response[i]
+
+        # if the response is invalid, append None and move on
+        if goals_dic is None:
+            continue
+
+        episode = episodes[i]
+        times = []
+        reasons = []
+        # for each subgoal identified in the trajectory
+        for reason, v in goals_dic.items():
+            if v is None:
+                continue
+            # identified a single timestep
+            elif isinstance(v, int):
+                times.append(v)
+                reasons.append(reason)
+            elif isinstance(v, float):
+                times.append(int(v))
+                reasons.append(reason)
+            # identified a list of timesteps for each subgoal
+            elif isinstance(v, (list, tuple)):
+                try:
+                    times.extend(list(map(int, v)))
+                    reasons.extend([reason] * len(v))
+                except:
+                    continue
+            else:
+                print("Cannot extract information from {}".format(goals_dic))
+
+        # otherwise, retrieve the obs and action at the time of subgoal achievement
+        rewarding_states = {}
+        for j, time in enumerate(times):
+            reason = reasons[j]
+            idx = jnp.where(episode.t == jnp.asarray(time - 1))[0]
+            if len(idx) > 0:
+                idx = idx[0]
+                obs = jnp.asarray(
+                    episode.info["observations"]["chars"][idx], dtype=jnp.int32
+                )
+                action = jnp.asarray(episode.action[idx], dtype=jnp.int32)
+                key = (decode_observation(obs), str(int(action)))
+                if key in rewarding_states:
+                    rewarding_states[key].append(reason)
+                else:
+                    rewarding_states[key] = [reason]
+
+        # append the retrieved info to the annotation
+        if len(times) > 0:
+            annotation = Annotation(
+                prompt=prompts[i], response=responses[i], parsed=rewarding_states
+            )
+            annotations.append(annotation)
+
+    return annotations
 
 
 def annotate_redistribution(
@@ -116,60 +176,24 @@ def batch_parse_response(responses: List[str]) -> List[dict | None]:
 
 
 def compose_prompt(episode: Timestep, llm_task_prompt: str) -> str:
-    def decode_observation(obs) -> str:
-        rows, cols = obs.shape
-        result = ""
-        for i in range(rows):
-            result += "\n" + "".join(map(chr, obs[i]))
-        return result
-
-    def decode_message(message):
-        if int(message.sum()) == 0:
-            return ""
-        return "".join(map(chr, message))
-
-    def decode_action(action: int):
-        actions = [
-            nethack.CompassCardinalDirection.N,  # 0
-            nethack.CompassCardinalDirection.E,  # 1
-            nethack.CompassCardinalDirection.S,  # 2
-            nethack.CompassCardinalDirection.W,  # 3
-            nethack.Command.PICKUP,  # 4
-            nethack.Command.APPLY,  # 5
-        ]
-        nle_action = actions[action]
-        return ACTIONS_MAP[nle_action][0]
-
-    # TODO: too many tokens for uncropped obs. Perhaps use cropped?
-    observations = episode.info["observations"]["chars_crop"]
-    observations = jnp.asarray(observations, dtype=jax.numpy.int32)
-    messages = episode.info["observations"]["message"]
-    messages = jnp.asarray(messages, dtype=jax.numpy.int32)
+    observations = jnp.asarray(
+        episode.info["observations"]["chars_crop"], dtype=jax.numpy.int32
+    )
+    messages = jnp.asarray(
+        episode.info["observations"]["message"], dtype=jax.numpy.int32
+    )
     prompt = ""
-    mask = episode.info["mask"]
-    # timesteps = []
     for t in range(0, len(episode.t)):
-        if mask[t] == jnp.asarray(0):
+        if episode.info["mask"][t] == jnp.asarray(0):
             continue
         prompt += f"Time: {int(episode.t[t])}\n"
-        # action = decode_action(int(episode.action[t]))
-        # prompt += f"Action: {action}\n"
+        action = decode_action(int(episode.action[t]))
         obs_as_string = decode_observation(observations[t])
-        # obs_as_string = obs_as_string.replace("    ", "\t")
-        # obs_as_string = obs_as_string.replace("\t\t\t\t\t\t\t\t", "\t")
-        prompt += f"Message: {decode_message(messages[t])}\n"
         prompt += f"Observation: {obs_as_string}\n\n"
+        prompt += f"Message: {decode_message(messages[t])}\n"
+        prompt += f"Planned action: {action}\n\n\n"
 
-        # timesteps.append(
-        #     {
-        #         "Timestep": int(episode.t[t]),
-        #         # "Action": decode_action(int(episode.action[t])),
-        #         "Observation": obs_as_string,
-        #     }
-        # )
-
-    # prompt = json.dumps(timesteps).encode().decode("unicode_escape")
-    prompt = llm_task_prompt.format(prompt, 1.0)
+    prompt = llm_task_prompt.format(prompt)
     return prompt
 
 

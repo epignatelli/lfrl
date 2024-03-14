@@ -1,6 +1,6 @@
 import os
 import pickle
-from typing import Generator, List
+from typing import Dict, Generator, List, Tuple
 
 from helx.base.mdp import Timestep
 
@@ -25,13 +25,17 @@ def get_next_valid_path(filepath: str, extension: str = "") -> str:
     return candidate
 
 
-def load_pickle_stream(filepath: str):
+def load_pickle_stream(filepath: str) -> Dict[Tuple[str, int], List[str]]:
     with open(filepath, "rb") as file:
-        content = []
+        content = {}
         while True:
             try:
                 segment = pickle.load(file)
-                content.extend(segment)
+                for key, reason in segment.items():
+                    if key in content:
+                        content[key].append(reason)
+                    else:
+                        content[key] = [reason]
             except EOFError:
                 break  # End of file
     return content

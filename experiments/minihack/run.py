@@ -3,7 +3,6 @@ import argparse
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--seed", type=int, default=0)
-# argparser.add_argument("--env_name", type=str, default="MiniHack-Room-5x5-v0")
 argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
 
 argparser.add_argument("--budget", type=int, default=10_000_000)
@@ -14,8 +13,12 @@ argparser.add_argument("--iteration_size", type=int, default=2048)
 argparser.add_argument("--discount", type=float, default=0.99)
 argparser.add_argument("--lambda_", type=float, default=0.95)
 argparser.add_argument("--observation_key", type=str, default="pixel_crop")
+argparser.add_argument("--ablation", type=str, default="full")
+argparser.add_argument("--beta", type=float, default=0.1)
 argparser.add_argument(
-    "--buffer_path", type=str, default="/scratch/uceeepi/calf/redistribution_alt/annotations_1.pkl2"
+    "--annotations_path",
+    type=str,
+    default="/scratch/uceeepi/calf/subgoals/annotations_6.pkl",
 )
 args = argparser.parse_args()
 
@@ -33,13 +36,44 @@ import minihack
 from nle import nethack
 
 import jax
+import jax.numpy as jnp
 import flax.linen as nn
 
 from helx.base.modules import Flatten
+from helx.base.mdp import Timestep
+import rlax
 
-from calf.trial import Experiment
-from calf.calf import HParams, CALF
-from calf.environment import UndictWrapper, MiniHackWrapper
+from calf.trial import Experiment, Agent
+from calf.ppo import HParams, PPO
+from calf.environment import UndictWrapper, MiniHackWrapper, LLMTableWrapper
+
+
+def batch_returns(rewards, discounts):
+    return jax.jit(jax.vmap(rlax.discounted_returns))(
+        rewards, discounts, jnp.zeros_like(rewards)
+    )
+
+
+class CalfExperiment(Experiment):
+    def update(self, agent: Agent, experience: Timestep, key: jax.Array):
+        agent, log = super().update(agent, experience, key=key)
+        log["calf/avg_intrinsic_reward"] = jnp.mean(experience.info["intrinsic_reward"])
+        log["calf/avg_extrinsic_reward"] = jnp.mean(experience.info["extrinsic_reward"])
+        rewards = experience.info["extrinsic_reward"]
+        discounts = agent.hparams.discount**experience.t * (
+            experience.step_type != jnp.asarray(2)
+        )
+        extrinsic_returns = jnp.asarray(
+            jax.vmap(rlax.discounted_returns)(
+                rewards, discounts, jnp.zeros_like(rewards)
+            )
+        )
+        extrinsic_returns = extrinsic_returns[experience.is_last()]
+        if extrinsic_returns.size > 0:
+            log["calf/avg_extrinsic_return"] = jnp.mean(extrinsic_returns)
+            log["calf/min_extrinsic_return"] = jnp.min(extrinsic_returns)
+            log["calf/max_extrinsic_return"] = jnp.max(extrinsic_returns)
+        return agent, log
 
 
 def main():
@@ -52,7 +86,6 @@ def main():
         discount=args.discount,
         lambda_=args.lambda_,
         iteration_size=args.iteration_size,
-        buffer_path=args.buffer_path,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -64,13 +97,21 @@ def main():
     ]
     env = gym.vector.make(
         args.env_name,
-        observation_keys=(args.observation_key, "chars"),
+        observation_keys=(
+            args.observation_key,
+            "chars",
+            "chars_crop",
+            "message",
+            "blstats",
+        ),
         actions=actions,
         max_episode_steps=100,
         num_envs=args.n_actors,
         asynchronous=True,
+        seeds=[[args.seed] * args.n_actors],
     )
     env = UndictWrapper(env, key=args.observation_key)
+    env = LLMTableWrapper(env, table_path=args.annotations_path, beta=args.beta)
     env = MiniHackWrapper.wraps(env)
     encoder = nn.Sequential(
         [
@@ -88,12 +129,12 @@ def main():
             nn.tanh,
         ]
     )
-    key = jax.random.PRNGKey(args.seed)
-    agent = CALF.init(env, hparams, encoder, key=key)
+    key = jnp.asarray(jax.random.PRNGKey(args.seed))
+    agent = PPO.init(env, hparams, encoder, key=key)
 
     # run experiment
-    config = {**args.__dict__, **{"phase": "calf"}}
-    experiment = Experiment("calf", config)
+    config = {**args.__dict__, **{"phase": "calf", "ablation": args.ablation}}
+    experiment = CalfExperiment("calf", config)
     experiment.run(agent, env, key)
 
 

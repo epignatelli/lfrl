@@ -76,7 +76,7 @@ class PPO(Agent):
         hparams: HParams,
         encoder: nn.Module,
         *,
-        key: KeyArray,
+        key: Array,
     ) -> PPO:
         assert isinstance(env.action_space, Discrete)
         assert (
@@ -259,7 +259,7 @@ class PPO(Agent):
 
         params, train_state, log = self.params, self.train_state, {}
         for _ in range(n_epochs):
-            # calcualte GAE with new (updated) value function and inject in timestep
+            # calculate GAE with new (updated) value function and inject in timestep
             episodes = jax.vmap(self.evaluate_experience)(episodes)
             # sample batch of transitions
             transitions = self.sample_experience(episodes, key=key)

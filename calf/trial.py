@@ -205,11 +205,16 @@ def run_n_steps(
         action, log_prob = policy_sample(agent.params, timestep.observation, k1)
         timestep.info["log_prob"] = log_prob
         next_timestep = env.step(k2, timestep, action)
+
         # log return, if available
+        reward = next_timestep.reward
+        # depure return log from intrinsic rewards
+        if "intrinsic_reward" in timestep.info:
+            reward = reward - timestep.info["intrinsic_reward"]
         if "return" in timestep.info:
             next_timestep.info["return"] = timestep.info["return"] * (
                 timestep.is_mid()
-            ) + (next_timestep.reward * agent.hparams.discount**timestep.t)
+            ) + (reward * agent.hparams.discount**timestep.t)
 
         timestep = next_timestep
 

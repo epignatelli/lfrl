@@ -72,23 +72,31 @@ Report the score in a python dictionary whose keys are the time of the timestep 
 
 PROMPT_IDENTIFY_SUBGOALS = """\
 The environment is MiniHack. In each observation, symbols represent the following items:
-# "." represents a floor tile.
-# "|" represent a walls.
-# "-" can represent either a wall or an open door.
-# "+" represents a closed door. Doors can be locked, and require a key to open.
-# ")" represents a key. Keys can open doors.
+- "." represents a floor tile.
+- "|" represent a walls.
+- "-" can represent either a wall or an open door.
+- "+" represents a closed door. Doors can be locked, and require a key to open.
+- "(" represents a key. Keys can open doors.
+- "<" represents staircase up.
+- ">" represents staircase down.
 
 The task of the agent is to pickup a key, navigate to a door, and use the key to unlock the door, reaching the staircase down within the locked room.
+
+Break down the task of the agent into subgoals.
+Now, consider the following (partial) trajectory collected from a random policy, which might or might not contain these subgoals.
+Determine if any of the subgoals you identified is achieved in the trajectory and identify which action in the trajectory is responsible for it.
+Specify also a confidence score and do not report subgoals identified low confidence.
 
 Observation Sequence:
 {}
 
-Final Return: {}
-
-Break down the task of the agent into subgoals.
-Now, consider the following (partial) trajectory, which might or might not contain these subgoals.
-Determine if any of the subgoal you identified is achieved in a state of the trajectory.
-Finally, provide the time at which the option terminated with a success as a python dictionary.
+Finally, provide the times at which the goal was achieved as a python dictionary.
+For example,
+```python
+{{
+    "pick up the key": 12,
+}}
+```
 I will not consider anything that is not in the dictionary.
 """
 
@@ -99,12 +107,12 @@ Environment: The environment is MiniHack. In each observation, symbols represent
 # A pipe "|" represent a walls.
 # A dash "-" can represent either a wall or an open door.
 # A plus sign "+" represents a closed door. Doors can be locked, and require a key to open.
-# A parenthesis ")" represents a key. Keys can open doors.
+# A parenthesis "()" represents a key. Keys can open doors.
 
 Observation Sequence:
 {}
 
-Final Return: {}
+Final Return: 1.0
 
 Task: Your task is to redistribute the final return among the actions taken in this \
 episode. Assign higher credit to actions that you believe had a significant positive \
