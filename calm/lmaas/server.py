@@ -5,7 +5,7 @@ import time
 from typing import Dict, List
 from flask import Flask, jsonify, request
 
-from calm.lmaas.models import LLM, OpenOrcaMistral7B, Roles, Gemma7B, Llama70B
+from calm.lmaas.models import LLM, Roles, Gemma7B
 
 
 class LLMServer:
@@ -58,6 +58,7 @@ class LLMServer:
         # format the response
         response = jsonify(response)
         response.headers["X-Response-Time"] = str(response_time)
+        response.headers["X-Model-Name"] = str(self.llm.model_name)
         return response
 
 

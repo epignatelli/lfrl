@@ -39,9 +39,7 @@ class LLM:
     def init(self, **kwargs):
         print("o" + "-" * 79)
         print(f"Loading {self.model_name}...")
-        tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name, trust_remote_code=True, padding_side="left"
-        )
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name, padding_side="left")
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
@@ -49,7 +47,11 @@ class LLM:
         load_in_8bit = kwargs.pop("load_in_8bit", False)
         if load_in_4bit or load_in_8bit:
             bnb_config = BitsAndBytesConfig(
-                load_in_4bit=load_in_4bit, load_in_8bit=load_in_8bit
+                load_in_4bit=load_in_4bit,
+                load_in_8bit=load_in_8bit,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
             )
             torch_dtype = None
         else:
@@ -105,6 +107,8 @@ class LLM:
                 **encoding,
                 pad_token_id=self.tokenizer.eos_token_id,
                 max_new_tokens=max_new_tokens,
+                # num_beams=10,
+                # do_sample=True,
                 **kwargs,
             )
             # get only the new tokens
@@ -118,9 +122,7 @@ class LLM:
             )
             return generated_text
 
-    def forward(
-        self, prompt: str, system_prompt: str = "", **kwargs
-    ) -> List[str]:
+    def forward(self, prompt: str, system_prompt: str = "", **kwargs) -> List[str]:
         conversation = [
             {"role": Roles.SYSTEM, "content": system_prompt},
             {"role": Roles.USER, "content": prompt},

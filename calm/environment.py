@@ -1,11 +1,15 @@
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
+import time
 
+from minihack import MiniHack
 import numpy as np
+from gymnasium import register
 import gym
 import gym.spaces
 import gym.wrappers
 import gym.vector
+from gym.vector.async_vector_env import AsyncVectorEnv
 from gym.utils.step_api_compatibility import (
     TerminatedTruncatedStepType as GymTimestep,
     DoneStepType,
@@ -13,7 +17,7 @@ from gym.utils.step_api_compatibility import (
 )
 import gym.core
 import numpy as np
-
+from nle import nethack
 import jax
 from jax import Array
 from jax.random import KeyArray
@@ -29,7 +33,64 @@ from .decode import decode_observation
 from .annotate import Annotation
 
 
-class LLMTableWrapper(gym.Wrapper):
+class ShaperWrapper(gym.Wrapper):
+    def __init__(self, env: MiniHack):
+        super().__init__(env)
+        self.is_batched = hasattr(env, "num_envs")
+        self.key_id = np.asarray(2102, dtype=int)
+        self.is_key_picked = False
+        self.is_door_opened = False
+        self.inv_glyphs_idx =  env._observation_keys.index("inv_glyphs")
+
+    def reset(self, **kwargs) -> Tuple[Any | Dict]:
+        self.is_key_picked = False
+        self.is_door_opened = False
+        obs, info = super().reset(**kwargs)
+        info["intrinsic_reward"] = 0
+        return obs, info  # type: ignore
+
+    def step(self, action):
+        env: MiniHack = self.env  # type: ignore
+
+        timestep = env.step(action)
+
+        timestep = convert_to_terminated_truncated_step_api(timestep)
+        obs, reward, term, trunc, info = timestep  # type: ignore
+        info: Dict[str, Any] = info
+
+        info["intrinsic_reward"] = reward * 0
+        # key pickup
+        r_int = self.key_picked(action) + self.door_unlocked(action)
+        reward += r_int
+        info["intrinsic_reward"] = r_int
+        return obs, reward, term, trunc, info
+
+    def key_picked(self, action):
+        env: MiniHack = self.env  # type: ignore
+        # key not in inventory before actio
+        not_in_inventory = self.is_key_picked
+        # action is pickup
+        correct_action = env.actions[action] == nethack.Command.PICKUP
+        # key is in inventory after pickup
+        now_in_inventory = self.key_id in env.last_observation[self.inv_glyphs_idx]
+        picked = not_in_inventory and correct_action and now_in_inventory
+        self.is_key_picked = now_in_inventory
+        return picked
+
+    def door_unlocked(self, action) -> bool:
+        env: MiniHack = self.env  # type: ignore
+        # door before action is closed
+        is_closed = self.is_door_opened
+        # actoin is open
+        correct_action = env.actions[action] == nethack.Command.APPLY
+        # door open after action
+        now_open = env.screen_contains("open door", env.last_observation)
+        opened = is_closed and correct_action and now_open
+        self.is_door_opened = now_open
+        return opened
+
+
+class LLMShaperWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env, table_path: str, beta: float):
         super().__init__(env)
         # load table
@@ -55,36 +116,40 @@ class LLMTableWrapper(gym.Wrapper):
         self.beta = beta
         self.why = stream
         self.table = table
-        self.n_actors = getattr(self, "num_envs", 1)
 
     def reset(self, seed, options={}):
         obs, info = self.env.reset(seed, options)  # type: ignore
-        info["extrinsic_reward"] = np.zeros(self.n_actors)
-        info["intrinsic_reward"] = np.zeros(self.n_actors)
+        info["extrinsic_reward"] = 0.0
+        info["intrinsic_reward"] = 0.0
         return obs, info
 
     def step(self, action):
         timestep = self.env.step(action)
         timestep = convert_to_terminated_truncated_step_api(timestep)
-        obs, reward, term, trunc, info = timestep
+        obs, reward, term, trunc, info = timestep  # type: ignore
+        info: Dict[str, Any] = info
+        # lookup
         chars = info["observations"]["chars"]  # type: ignore
-        r_int = []
-        for actor in range(self.n_actors):
-            key = (decode_observation(chars[actor]), str(int(action[actor])))
-            r_int.append(self.table.get(key, 0))
-        r_int = np.asarray(r_int)
-        info["extrinsic_reward"] = reward  # type: ignore
-        info["intrinsic_reward"] = r_int  # type: ignore
+        key = (decode_observation(chars), str(int(action)))
+        r_int = self.table.get(key, 0)
+        # store
+        info["extrinsic_reward"] = reward
+        info["intrinsic_reward"] = r_int
         reward += r_int * self.beta
         return obs, reward, term, trunc, info
 
 
 class UndictWrapper(gym.core.Wrapper):
+
     def __init__(self, env: gym.Env, key: str):
         super().__init__(env)
         assert isinstance(env.observation_space, gym.spaces.Dict)
         self.main_key = key
         self.observation_space = env.observation_space[key]
+
+    @property
+    def single_observation_space(self):
+        return self.env.single_observation_space[self.main_key]
 
     def reset(self, seed, options={}):
         obs, info = self.env.reset()
@@ -110,6 +175,8 @@ class UndictWrapper(gym.core.Wrapper):
 
 
 class MiniHackWrapper(GymWrapper):
+    env: MiniHack | AsyncVectorEnv
+
     __transparent_info__: Tuple[str, ...] = struct.field(
         pytree_node=False,
         default=(
@@ -137,11 +204,11 @@ class MiniHackWrapper(GymWrapper):
         return timestep
 
     def step(self, key: KeyArray, timestep: Timestep, action: Array) -> Timestep:
-        next_timestep = self.env.step(np.asarray(action))
+        next_timestep = self.env.step(np.asarray(action))  # type: ignore
         t = jnp.asarray((timestep.t + 1) * timestep.is_mid(), dtype=jnp.int32)
         action = (action * timestep.is_mid()) - (timestep.is_last())
         # (t, s_{t+1}, r_t, d_t, a_t, g_t)
-        next_timestep = self._wrap_timestep(next_timestep, action, t)
+        next_timestep = self._wrap_timestep(next_timestep, action, t)  # type: ignore
         return next_timestep
 
     @classmethod
@@ -149,7 +216,7 @@ class MiniHackWrapper(GymWrapper):
         num_envs = getattr(env, "num_envs", 1)
         env_shape = (num_envs,) if num_envs > 1 else ()
         helx_env = cls(
-            env=env,
+            env=env,  # type: ignore
             observation_space=cls._wrap_space(env.observation_space),
             action_space=cls._wrap_space(env.action_space),
             reward_space=Continuous(
@@ -209,12 +276,170 @@ class MiniHackWrapper(GymWrapper):
         )
 
 
-SYMSET = {
-    "-": "open door (in vertical wall)",
-    "|": "open door (in horizontal wall)",
-    "<space>": "dark part of a room or solid rock",
-    ".": "doorway (with no or broken door)",
-    "+": "closed door (in vertical wall)",
-    ">": "staircase down",
-    "<": "staircase up",
-}
+
+register(
+    id="MiniHack-KeyRoom-Fixed-S5-v0",
+    entry_point="minihack.envs.keyroom:MiniHackKeyRoom5x5Fixed",
+)
+register(
+    id="MiniHack-KeyRoom-S5-v0",
+    entry_point="minihack.envs.keyroom:MiniHackKeyRoom5x5",
+)
+register(
+    id="MiniHack-KeyRoom-S15-v0",
+    entry_point="minihack.envs.keyroom:MiniHackKeyRoom15x15",
+)
+register(
+    id="MiniHack-KeyRoom-Dark-S5-v0",
+    entry_point="minihack.envs.keyroom:MiniHackKeyRoom5x5Dark",
+)
+register(
+    id="MiniHack-KeyRoom-Dark-S15-v0",
+    entry_point="minihack.envs.keyroom:MiniHackKeyRoom15x15Dark",
+)
+
+# class ShaperWrapper(gym.Wrapper):
+#     def __init__(self, env: gym.Env):
+#         super().__init__(env)
+#         self.is_batched = hasattr(env, "num_envs")
+#         self.key_id = np.asarray(2102, dtype=int)
+
+#     def step(self, action):
+#         env: MiniHack = self.env  # type: ignore
+
+#         # env.last_observation is mutable and overwritten by env.step, so do pre-checks
+#         key_prechecks = self.key_picked_prechecks()
+#         door_prechecks = self.door_unlocked_prechecks()
+
+#         timestep = env.step(action)
+#         timestep = convert_to_terminated_truncated_step_api(timestep)
+#         obs, reward, term, trunc, info = timestep  # type: ignore
+#         info: Dict[str, Any] = info
+
+#         info["intrinsic_reward"] = reward * 0
+#         # key pickup
+#         r_int = self.key_picked(key_prechecks, action) + self.door_unlocked(
+#             door_prechecks, action
+#         )
+#         reward += r_int
+#         info["intrinsic_reward"] = info["intrinsic_reward"] + r_int
+
+#         return obs, reward, term, trunc, info
+
+#     def key_picked_prechecks(self):
+#         env: MiniHack = self.env  # type: ignore
+#         inv_glyphs_idx = env._observation_keys.index("inv_glyphs")
+#         inventory = self.last_observation[inv_glyphs_idx]
+#         return jnp.logical_not(np.isin(self.key_id, inventory))
+
+#     def door_unlocked_prechecks(self):
+#         env: MiniHack = self.env  # type: ignore
+#         return env.screen_contains("closed door")
+
+#     def key_picked(self, prechecks, action):
+#         env: MiniHack = self.env  # type: ignore
+#         inv_glyphs_idx = env._observation_keys.index("inv_glyphs")
+
+#         # key already in inventory
+#         not_in_inventory = prechecks
+#         # did not use pickup action
+#         correct_action = action == env.actions.index(nethack.Command.PICKUP)
+#         # key has not been picked up
+#         now_in_inventory = np.isin(self.key_id, env.last_observation[inv_glyphs_idx])
+
+#         cond = np.stack([not_in_inventory, correct_action, now_in_inventory], axis=0)
+#         cond = jnp.all(cond, axis=0)
+#         return cond
+
+#     def door_unlocked(self, prechecks, action) -> bool:
+#         env: MiniHack = self.env  # type: ignore
+#         # door before action is closed
+#         is_closed = prechecks
+#         # actoin is open
+#         correct_action = action == env.actions.index(nethack.Command.APPLY)
+#         # door open after action
+#         now_open = env.screen_contains("open door", env.last_observation)
+
+#         cond = np.stack([is_closed, correct_action, now_open], axis=0)
+#         cond = np.all(cond, axis=0)
+#         return cond
+
+
+# class LLMTableWrapper(gym.Wrapper):
+#     def __init__(self, env: gym.Env, table_path: str, beta: float):
+#         super().__init__(env)
+#         # load table
+#         print(f"Loading LLM reward table from {table_path}...\t", end="")
+#         stream: List[Annotation] = load_pickle_stream(table_path)
+
+#         # postprocess table
+#         table = {}
+#         maximum = 0
+#         minimum = 1_000_000
+#         for ann in stream:
+#             for key in ann.parsed:
+#                 count = table.get(key, 0) + len(ann.parsed[key])
+#                 maximum = max(maximum, count)
+#                 minimum = min(minimum, count)
+#                 table[key] = count
+
+#         # normalise
+#         for key in table:
+#             table[key] = (table[key] - minimum) / (maximum - minimum)
+#         print("Done")
+#         # set fields
+#         self.beta = beta
+#         self.why = stream
+#         self.table = table
+#         self.n_actors = getattr(self, "num_envs", 1)
+
+#     def reset(self, seed, options={}):
+#         obs, info = self.env.reset(seed, options)  # type: ignore
+#         info["extrinsic_reward"] = np.zeros(self.n_actors)
+#         info["intrinsic_reward"] = np.zeros(self.n_actors)
+#         return obs, info
+
+#     def step(self, action):
+#         timestep = self.env.step(action)
+#         timestep = convert_to_terminated_truncated_step_api(timestep)
+#         obs, reward, term, trunc, info = timestep
+#         chars = info["observations"]["chars"]  # type: ignore
+#         r_int = []
+#         for actor in range(self.n_actors):
+#             key = (decode_observation(chars[actor]), str(int(action[actor])))
+#             r_int.append(self.table.get(key, 0))
+#         r_int = np.asarray(r_int)
+#         info["extrinsic_reward"] = reward  # type: ignore
+#         info["intrinsic_reward"] = r_int  # type: ignore
+#         reward += r_int * self.beta
+#         return obs, reward, term, trunc, info
+
+
+# class UndictWrapper(gym.core.Wrapper):
+#     def __init__(self, env: gym.Env, key: str):
+#         super().__init__(env)
+#         assert isinstance(env.observation_space, gym.spaces.Dict)
+#         self.main_key = key
+#         self.observation_space = env.observation_space[key]
+
+#     def reset(self, seed, options={}):
+#         obs, info = self.env.reset()
+#         assert isinstance(
+#             obs, dict
+#         ), "UndictWrapper requires observations to be a dictionary, got {}".format(
+#             type(obs)
+#         )
+#         main_obs = obs.pop(self.main_key)
+#         info["observations"] = obs
+#         return main_obs, info
+
+#     def step(self, action):
+#         obs, reward, term, trunc, info = self.env.step(action)  # type: ignore
+#         assert isinstance(
+#             obs, dict
+#         ), "UndictWrapper requires observations to be a dictionary, got {}".format(
+#             type(obs)
+#         )
+#         main_obs = obs.pop(self.main_key)
+#         info["observations"] = obs
+#         return (main_obs, reward, term, trunc, info)

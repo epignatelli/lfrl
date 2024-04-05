@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 import time
 import requests
 import re
@@ -11,15 +11,12 @@ import jax.numpy as jnp
 from helx.base.mdp import Timestep
 
 from .prompts import (
-    PROMPT_IDENTIFY_SUBGOALS_BASE,
-    PROMPT_IDENTIFY_SUBGOALS_TASK_ABLATION,
-    PROMPT_IDENTIFY_SUBGOALS_ROLE_ABLATION,
-    PROMPT_IDENTIFY_SUBGOALS_IDENTIFICAION_ABLATION
+    PROMPT_BASE,
 )
 from .decode import decode_action, decode_message, decode_observation
 
 
-PROMPT = PROMPT_IDENTIFY_SUBGOALS_BASE
+PROMPT = PROMPT_BASE
 
 
 @dataclass
@@ -29,40 +26,25 @@ class Annotation:
     parsed: Dict[Tuple[str, str], List[str]]
 
 
-def split(episode: Timestep, size: int) -> List[Timestep]:
-    """Splits an array into a List of arrays including the last remaining items
-    whose chunk length could be less than size"""
-    upper = (len(episode) // size + 1) * size + 1
-    indices = jnp.arange(0, upper, size)
-    return [episode[indices[i] : indices[i + 1]] for i in range(len(indices) - 1)]
-
-
-def make_transitions(episode: Timestep) -> List[Timestep]:
-    transitions = []
-    for i in range(len(episode.t) - 2):
-        transition = episode[i : i + 3]
-        if transition.info["mask"].sum() > 0:
-            transitions.append(transition)
-    return transitions
-
-
 def annotate_subgoals(
     episodes_batch: List[Timestep],
     max_new_tokens: int,
     url: str = "http://localhost:5000/respond",
-    seq_len: int | None = None,
+    instructions: str = PROMPT,
+    ablate_action=False,
+    ablate_message=False,
+    token_separator="",
+    tty=False,
 ) -> List[Annotation]:
-    # split into chunks of seq_len
-    if seq_len is not None:
-        episodes_chunks = []
-        for episode in episodes_batch:
-            # chunks = make_transitions(episode)
-            chunks = [x for x in split(episode, seq_len) if len(x) > 0]
-            episodes_chunks.extend(chunks)
-        episodes_batch = episodes_chunks
-
     # compose prompt
-    prompts = batch_compose_prompts(episodes_batch, PROMPT)
+    prompts = batch_compose_prompts(
+        episodes=episodes_batch,
+        prompt=instructions,
+        ablate_action=ablate_action,
+        ablate_message=ablate_message,
+        token_separator=token_separator,
+        tty=tty,
+    )
 
     # query LLM
     responses = batch_query_llm(prompts, max_new_tokens, url)
@@ -83,6 +65,10 @@ def parse_subgoals(
 
         # if the response is invalid, append None and move on
         if goals_dic is None:
+            print(f"Discarding response {i}. No dictionary to parse.")
+            continue
+        elif len(goals_dic) == 0:
+            print(f"Discarding response {i}. Empty dictionary.")
             continue
 
         episode = episodes[i]
@@ -127,7 +113,8 @@ def parse_subgoals(
                     rewarding_states[key] = [reason]
 
         # append the retrieved info to the annotation
-        if len(times) > 0:
+        print(f"Found {len(rewarding_states)} useful annotations in response {i}.")
+        if len(rewarding_states) > 0:
             annotation = Annotation(
                 prompt=prompts[i], response=responses[i], parsed=rewarding_states
             )
@@ -153,15 +140,51 @@ def batch_query_llm(
     return responses
 
 
-def batch_compose_prompts(episodes: List[Timestep], prompt: str) -> List[str]:
+def batch_query_llm_with_name(
+    prompts: List[str],
+    max_new_tokens: int,
+    url: str = "http://localhost:5000/respond",
+) -> Tuple[List[str], str]:
+    print("Prompting LLM...\t", end="", flush=True)
+    start_time = time.time()
+    response = requests.post(
+        url,
+        data={"prompts[]": [prompt.encode() for prompt in prompts]},
+        params={"max_new_tokens": max_new_tokens},
+    )
+    responses = response.json()
+    print(f"Done in {time.time() - start_time}s")
+    return responses, response.headers.get("X-Model-Name", "unknown")
+
+
+def batch_compose_prompts(
+    episodes: List[Timestep],
+    prompt: str,
+    ablate_action=False,
+    ablate_message=False,
+    token_separator="",
+    tty=False,
+) -> List[str]:
     print("Composing prompts...\t", end="", flush=True)
     start_time = time.time()
-    prompts = list(map(lambda x: compose_prompt(x, prompt), episodes))
+    prompts = list(
+        map(
+            lambda x: compose_prompt(
+                x,
+                prompt,
+                ablate_action=ablate_action,
+                ablate_message=ablate_message,
+                token_separator=token_separator,
+                tty=tty,
+            ),
+            episodes,
+        )
+    )
     print(f"Done in {time.time() - start_time}s")
     return prompts
 
 
-def batch_parse_response(responses: List[str]) -> List[dict | None]:
+def batch_parse_response(responses: List[str]) -> List[dict]:
     print("Parsing responses...\t", end="", flush=True)
     start_time = time.time()
     dictionaries = list(map(parse_response, responses))
@@ -169,29 +192,63 @@ def batch_parse_response(responses: List[str]) -> List[dict | None]:
     return dictionaries
 
 
-def compose_prompt(episode: Timestep, llm_task_prompt: str) -> str:
-    observations = jnp.asarray(
-        episode.info["observations"]["chars_crop"], dtype=jax.numpy.int32
-    )
-    messages = jnp.asarray(
-        episode.info["observations"]["message"], dtype=jax.numpy.int32
-    )
+def compose_prompt(
+    episode: Timestep,
+    llm_task_prompt: str,
+    ablate_action=False,
+    ablate_message=False,
+    token_separator="",
+    tty=False,
+) -> str:
+    if tty:
+        ttys = jnp.asarray(
+            episode.info["observations"]["tty_chars"], dtype=jax.numpy.int32
+        )
+    else:
+        observations = jnp.asarray(
+            episode.info["observations"]["chars_crop"], dtype=jax.numpy.int32
+        )
+        messages = jnp.asarray(
+            episode.info["observations"]["message"], dtype=jax.numpy.int32
+        )
+
     prompt = ""
-    for t in range(0, len(episode.t)):
-        if episode.info["mask"][t] == jnp.asarray(0):
-            continue
-        prompt += f"Time: {int(episode.t[t])}\n"
-        action = decode_action(int(episode.action[t]))
-        obs_as_string = decode_observation(observations[t])
-        prompt += f"Observation: {obs_as_string}\n\n"
-        prompt += f"Message: {decode_message(messages[t])}\n"
-        prompt += f"Planned action: {action}\n\n\n"
+    last_action = "None"
+    for t in range(len(episode.t)):
+        time = int(t)
+        prompt += f"Time: {time}\n"
+
+        # tty
+        if tty:
+            obs = decode_observation(ttys[t], separator="")
+            obs = obs.split("\n")
+            grid = [token_separator.join(x) for x in obs[2:22]]
+            obs = "\n".join(obs[0:2] + grid + obs[22:])
+            prompt = prompt[:-2] # remove new line
+            prompt += obs + "\n\n"
+        else:
+            if not ablate_action:
+                next_action = decode_action(int(episode.action[t]))
+                prompt += f"Last action: {last_action}\n"
+
+            if not ablate_message:
+                current_message = decode_message(messages[t])
+                prompt += f"Current message: {current_message}\n"
+
+            current_observation = decode_observation(
+                observations[t], separator=token_separator
+            )
+            prompt += f"Current observation: {current_observation}\n\n"
+
+            if not ablate_action:
+                prompt += f"Next action: {next_action}\n\n\n"
+                last_action = next_action
 
     prompt = llm_task_prompt.format(prompt)
     return prompt
 
 
-def parse_response(response: str) -> dict | None:
+def parse_response(response: str) -> dict:
     pattern = r"```(python)?(.*)({.*})"
     try:
         match = re.search(pattern, response, re.DOTALL)
@@ -201,83 +258,5 @@ def parse_response(response: str) -> dict | None:
         response_parsed = eval(dict_str)
         return response_parsed
     except:
-        print(f"Invalid response {response}.\nDiscarding prompt")
-        return None
-
-
-# def annotate_redistribution(
-#     episodes: List[Timestep],
-#     max_new_tokens: int,
-#     url: str = "http://localhost:5000/respond",
-# ) -> List[Timestep]:
-#     # compose prompt
-#     prompts = batch_compose_prompts(episodes, PROMPT_IDENTIFY_SUBGOALS)
-
-#     # query LLM
-#     responses = batch_query_llm(prompts, max_new_tokens, url)
-
-#     # parse rewards
-#     parsed = batch_parse_response(responses)
-#     for i, reward_dict in enumerate(parsed):
-#         if reward_dict is None:
-#             continue
-#         rewards = list(reward_dict.values())
-#         if len(rewards) != len(episodes[i].t):
-#             continue
-#         rewards = jnp.asarray(rewards)
-#         episodes[i] = episodes[i].replace(reward=rewards)
-#     return episodes
-
-
-# def batch_parse_redistribution(
-#     responses: List[str], episodes: List[Timestep]
-# ) -> List[Array]:
-#     return list(map(parse_redistribution, responses, episodes))
-
-
-# def parse_redistribution(response: str, episode: Timestep) -> Array:
-#     pattern = r"```(python)?(.*)({.*})"
-#     try:
-#         seq_len = int(episode.info["mask"].sum())
-#         match = re.search(pattern, response, re.DOTALL)
-#         if match is None:
-#             raise
-#         dict_str = match.group(3)
-#         r = eval(dict_str)
-#         credits = list(r.values())
-#         assert len(credits) == seq_len
-#         return jnp.asarray(credits)
-#     except:
-#         print(f"Invalid response {response}.\nDiscarding prompt.")
-#         return jnp.ones((seq_len,)) / seq_len  # distribute uniformly
-
-
-# def annotate_rewards(
-#     episodes: List[Timestep],
-#     max_new_tokens: int,
-#     llm_task_prompt: str,
-#     url: str = "http://localhost:5000/respond",
-# ) -> Tuple[List[Array], List[int]] | None:
-#     """Evaluate the model with a large language model."""
-#     # compose prompt
-#     print("Composing prompts...\t", end="", flush=True)
-#     start_time = time.time()
-#     prompts = list(map(lambda x: compose_prompt(x, llm_task_prompt), episodes))
-#     print(f"Done in {time.time() - start_time}s")
-
-#     print("Prompting LLM...\t", end="", flush=True)
-#     start_time = time.time()
-#     response = requests.post(
-#         url,
-#         data={"prompts[]": [prompt.encode() for prompt in prompts]},
-#         params={"max_new_tokens": max_new_tokens},
-#     )
-#     responses = response.json()
-#     print(f"Done in {time.time() - start_time}s")
-
-#     # parse response
-#     print("Parsing responses...\t", end="", flush=True)
-#     start_time = time.time()
-#     rewards, valid = parse_redistribution(responses, episodes)
-#     print(f"Done in {time.time() - start_time}s")
-#     return rewards, valid
+        # print(f"Invalid response {response}.\nDiscarding prompt")
+        return {}

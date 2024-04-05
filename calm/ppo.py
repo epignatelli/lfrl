@@ -241,7 +241,7 @@ class PPO(Agent):
             "losses/critic_loss": critic_loss,
             "losses/actor_loss": actor_loss,
             "losses/entropy_bonus": entropy_loss,
-            "losses/entropy": entropy,
+            "policy/entropy": entropy,
         }
         return loss, log
 

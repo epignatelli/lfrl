@@ -72,7 +72,8 @@ class Experiment:
         agent, log = agent.update(experience, key=key)
         return agent, log
 
-    def close(self): ...
+    def close(self):
+        wandb.finish()
 
     def run(
         self,
