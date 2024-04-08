@@ -1,58 +1,28 @@
 from __future__ import annotations
 import argparse
 from typing import List
-
-argparser = argparse.ArgumentParser()
-argparser.add_argument("--seed", type=int, default=0)
-# argparser.add_argument("--env_name", type=str, default="MiniHack-Room-5x5-v0")
-argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
-
-argparser.add_argument("--budget", type=int, default=10_000_000)
-argparser.add_argument("--n_actors", type=int, default=2)
-argparser.add_argument("--n_epochs", type=int, default=4)
-argparser.add_argument("--batch_size", type=int, default=128)
-argparser.add_argument("--iteration_size", type=int, default=2048)
-argparser.add_argument("--discount", type=float, default=0.99)
-argparser.add_argument("--lambda_", type=float, default=0.95)
-argparser.add_argument("--observation_key", type=str, default="pixel_crop")
-argparser.add_argument("--max_buffer_size", type=int, default=10_000)
-argparser.add_argument("--llm_transition_len", type=int, default=100)
-argparser.add_argument("--out_dir", type=str, default="/scratch/uceeepi/calf")
-args = argparser.parse_args()
-
 import random
-
-random.seed(args.seed)
-
-import numpy as np
-
-np.random.seed(args.seed)
-
-import torch
-
-torch.manual_seed(args.seed)
-
 import os
 from stat import S_IREAD, S_IRGRP, S_IROTH
-import pickle
+import sys
 
+import numpy as np
+import torch
+import pickle
 import gym
 import gym.vector
 import minihack
 from nle import nethack
-
 import jax
 import jax.tree_util as jtu
 import jax.numpy as jnp
 import flax.linen as nn
-
 from helx.base.modules import Flatten
 from helx.base.mdp import Timestep, StepType
 
 from calm.trial import Experiment
 from calm.ppo import HParams, PPO
 from calm.environment import UndictWrapper, MiniHackWrapper
-from calm.io import get_next_valid_path
 
 
 def extract_episode_from_stream(experience: Timestep):
@@ -90,7 +60,7 @@ def extract_n_steps_from_stream(
 
         start_idx = max(0, end_idx - transition_len)
         # experience has canonical structure, so we index it via `experience.at`
-        segment = experience[batch_idx].at_time[start_idx: end_idx]
+        segment = experience[batch_idx].at_time[start_idx:end_idx]
         # arrays in `segment` are now aligned in time (s_0, a_0, ..., s_T, a_T)
 
         # if there is a start in segment, take the latest one
@@ -131,10 +101,16 @@ class DemoExperiment(Experiment):
     def __init__(self, name: str, config: dict):
         super().__init__(name, config)
         # prepare for saving
-        filepath = os.path.join(config["out_dir"], "demonstrations.pkl")
-        out_path = get_next_valid_path(filepath)
+        out_path = config["dest_path"]
         # init
         self.out_path = out_path
+        if os.path.exists(out_path):
+            remove = input(f"Overwrite file {out_path} [y/N]?  ")
+            if remove.lower() in ["y", "yes"]:
+                print(f"Overwriting file {out_path}")
+                os.remove(out_path)
+            else:
+                sys.exit()
         self.file = open(out_path, "ab")
         self.buffer_len = jnp.asarray(0)
 
@@ -152,6 +128,7 @@ class DemoExperiment(Experiment):
         return agent, log
 
     def close(self):
+        super().close()
         # close the file
         self.file.close()
         # set demo file in readonly mode to avoid disasters (yes, it happened, once!)
@@ -159,16 +136,16 @@ class DemoExperiment(Experiment):
         return
 
 
-def main():
+def main(argv):
     hparams = HParams(
         beta=0.01,
         clip_ratio=0.2,
-        n_actors=args.n_actors,
-        n_epochs=args.n_epochs,
-        batch_size=args.batch_size,
-        discount=args.discount,
-        lambda_=args.lambda_,
-        iteration_size=args.iteration_size,
+        n_actors=argv.n_actors,
+        n_epochs=argv.n_epochs,
+        batch_size=argv.batch_size,
+        discount=argv.discount,
+        lambda_=argv.lambda_,
+        iteration_size=argv.iteration_size,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -179,46 +156,66 @@ def main():
         nethack.Command.APPLY,
     ]
     env = gym.vector.make(
-        args.env_name,
+        argv.env_name,
         observation_keys=(
-            args.observation_key,
+            argv.observation_key,
             "chars",
             "chars_crop",
             "message",
             "blstats",
+            "tty_chars",
+            "tty_colors",
+            "tty_cursor",
         ),
         actions=actions,
         max_episode_steps=100,
-        num_envs=args.n_actors,
+        num_envs=argv.n_actors,
         asynchronous=True,
-        seeds=[[args.seed]] * args.n_actors
+        seeds=[[argv.seed]] * argv.n_actors,
     )
-    env = UndictWrapper(env, key=args.observation_key)
+    env = UndictWrapper(env, key=argv.observation_key)
     env = MiniHackWrapper.wraps(env)
     encoder = nn.Sequential(
         [
-            # greyscale,
-            nn.Conv(16, (3, 3), (1, 1)),
-            nn.tanh,
-            nn.Conv(32, (3, 3), (1, 1)),
-            nn.tanh,
-            nn.Conv(64, (3, 3), (1, 1)),
-            nn.tanh,
             Flatten(),
-            nn.Dense(256),
+            nn.Dense(2048),
             nn.tanh,
-            nn.Dense(128),
+            nn.Dense(1024),
+            nn.tanh,
+            nn.Dense(512),
             nn.tanh,
         ]
     )
-    key = jnp.asarray(jax.random.PRNGKey(args.seed))
+    key = jnp.asarray(jax.random.PRNGKey(argv.seed))
     agent = PPO.init(env, hparams, encoder, key=key)
 
     # run experiment
-    config = {**args.__dict__, **{"phase": "demo"}}
+    config = {**argv.__dict__, **{"phase": "demo"}}
     experiment = DemoExperiment("calf", config)
     experiment.run(agent, env, key)
 
 
 if __name__ == "__main__":
-    main()
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--seed", type=int, default=0)
+    argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
+
+    argparser.add_argument("--budget", type=int, default=10_000_000)
+    argparser.add_argument("--n_actors", type=int, default=2)
+    argparser.add_argument("--n_epochs", type=int, default=4)
+    argparser.add_argument("--batch_size", type=int, default=128)
+    argparser.add_argument("--iteration_size", type=int, default=2048)
+    argparser.add_argument("--discount", type=float, default=0.99)
+    argparser.add_argument("--lambda_", type=float, default=0.95)
+    argparser.add_argument("--observation_key", type=str, default="glyphs")
+    argparser.add_argument("--max_buffer_size", type=int, default=10_000)
+    argparser.add_argument("--llm_transition_len", type=int, default=100)
+
+    argparser.add_argument("--dest_path", type=str, default="/scratch/uceeepi/calf/demonstrations/demo_3.pkl")
+    args = argparser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
+    main(args)

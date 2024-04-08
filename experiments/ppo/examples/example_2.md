@@ -65,8 +65,6 @@ Planned action: north
 
 
 Time: 2
-Last action: North
-Message: This door is locked.
 Next oservation:
 
 
@@ -78,12 +76,12 @@ Next oservation:
 
 
 
+Message: This door is locked.
+Planned action: south
 
-Next action: south
 
 
 Time: 3
-Last action: south
 Observation:
 
 

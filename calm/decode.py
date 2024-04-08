@@ -7,14 +7,16 @@ def decode_observation(obs: Array, separator: str=" ") -> str:
     rows, cols = obs.shape
     result = ""
     for i in range(rows):
-        result += "\n" + separator.join(map(chr, obs[i]))
+        f = lambda x: chr(int(x))
+        result += "\n" + separator.join(map(f, obs[i]))
     return result
 
 
 def decode_message(message):
     if int(message.sum()) == 0:
         return ""
-    return "".join(map(chr, message)).strip("\x00")
+    f = lambda x: chr(int(x))
+    return "".join(map(f, message)).strip("\x00")
 
 
 def decode_action(action: int):

@@ -45,7 +45,7 @@ import rlax
 
 from calm.trial import Experiment, Agent
 from calm.ppo import HParams, PPO
-from calm.environment import UndictWrapper, MiniHackWrapper, LLMTableWrapper
+from calm.environment import UndictWrapper, MiniHackWrapper, LLMShaperWrapper
 
 
 def batch_returns(rewards, discounts):
@@ -108,7 +108,7 @@ def main():
         seeds=[[args.seed] * args.n_actors],
     )
     env = UndictWrapper(env, key=args.observation_key)
-    env = LLMTableWrapper(env, table_path=args.annotations_path, beta=args.beta)
+    env = LLMShaperWrapper(env, table_path=args.annotations_path, beta=args.beta)
     env = MiniHackWrapper.wraps(env)
     encoder = nn.Sequential(
         [

@@ -107,7 +107,7 @@ subgoals = {{
 
 INSTRUCTION_IDENTIFY = """Then, consider the following (partial) trajectory, which \
 might or might not contain these subgoals.
-Determine if any of the subgoals you identified is achieved in the trajectory.
+Determine if any of the subgoals you identified appears in the trajectory.
 
 Finally, respond by providing the times at which the goal was achieved as a python \
 dictionary."""
@@ -129,6 +129,12 @@ or not, and explain the reasons of your choice.
 
 Finally, respond by filtering only the optimal actions an return them in a python \
 dictionary."""
+
+
+INSTRUCTION_TRANSITION = """Then, consider the following game transition, which \
+might or might not contain these subgoals.
+Determine if any of the subgoals you identified has been achieved at Time: 1 or not.
+"""
 
 ##############################################################################
 
@@ -171,13 +177,21 @@ up is at Time: 12, respond with:
 """
 
 
-OUTPUT_FORMAT_GENERIC = """For example, if the first observation after the key was picked \
-up is at Time: 12, respond with:
+OUTPUT_FORMAT_GENERIC = """For example,
 ```python
-achievements: Dict[str, int] = {{
+{{
     <goal-name as str>: <time as int>,
 }}
 ```
+"""
+
+
+OUTPUT_FORMAT_TRANSITION = """Report your response in a dictionary containing the name \
+of the subgoals as keys and booleans as value. For example:
+```python
+{{
+    <name of goal>: <bool>,
+}} 
 """
 
 
