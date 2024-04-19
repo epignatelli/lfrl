@@ -12,6 +12,7 @@ from transformers import (
     FlaxGemmaForCausalLM,
     BitsAndBytesConfig,
 )
+from tokenizers import pre_tokenizers
 import requests
 
 
@@ -22,8 +23,9 @@ class Roles:
 
 
 class LLM:
-    def __init__(self, model_name: str, template_url: str = ""):
+    def __init__(self, model_name: str, revision: str = "", template_url: str = ""):
         self.model_name = model_name
+        self.revision = revision
         self.template_url = template_url
 
     def patch_chat_template(self):
@@ -39,7 +41,11 @@ class LLM:
     def init(self, **kwargs):
         print("o" + "-" * 79)
         print(f"Loading {self.model_name}...")
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name, padding_side="left")
+
+        revision = self.revision if self.revision != "" else None
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name, padding_side="left", revision=revision 
+        )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
@@ -64,6 +70,7 @@ class LLM:
             attn_implementation="flash_attention_2",
             trust_remote_code=True,
             quantization_config=bnb_config,
+            revision=revision,
             **kwargs,
         )
         self.tokenizer = tokenizer

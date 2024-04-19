@@ -10,13 +10,19 @@ import numpy as np
 import pandas as pd
 
 
-def parse_response(response: str) -> dict:
-    pattern = r"```(python)?(.*)({.*})"
+def parse_response(response: str, strict: bool=False) -> dict:
+    if strict:
+        pattern = r"```(python)?(.*)({.*})"
+    else:
+        pattern = r"({.*})"
     try:
         match = re.search(pattern, response, re.DOTALL)
         if match is None:
             raise
-        dict_str = match.group(3)
+        if strict:
+            dict_str = match.group(3)
+        else:
+            dict_str = match.group(1)
         response_parsed = eval(dict_str)
         if isinstance(response_parsed, dict):
             return response_parsed
@@ -82,6 +88,27 @@ def evaluate(pred, truth):
     return tp, fp, fn, n
 
 
+def evaluate_transitions(pred, truth):
+    tp = 0
+    fp = 0
+    fn = 0
+
+    # we only check if the LLM flagged the transition as rewarding
+    # we do not check the reason 
+    # (maybe LLM flagged because pickup but the true goal was unlock)
+    pred_detected = any(pred.keys())
+    truth_detected = any(truth.keys())
+    
+    if pred_detected and truth_detected:
+        tp += 1
+    elif pred_detected and not truth_detected:
+        fp += 1
+    elif not pred_detected and truth_detected:
+        fn += 1
+    n = fp + fn + tp
+    return tp, fp, fn, n
+
+
 def _highligh_n_best(
     data: pd.DataFrame | pd.Series, op: str, props: str, n: int = 2
 ) -> np.ndarray:
@@ -106,7 +133,8 @@ def main(argv):
     evaluation = argv.evaluation
     latex = argv.latex
 
-    evaluate_folders = [x for x in os.listdir(source_dir) if re.search(argv.match, x)]
+    pattern = re.compile(f'^(?!.*({argv.exclude})).*({argv.match})')
+    evaluate_folders = [x for x in os.listdir(source_dir) if re.search(pattern, x)]
     evaluate_folders += glob.glob(os.path.join(source_dir, "human-*"))
 
     # iterate over each annotation agent
@@ -116,21 +144,21 @@ def main(argv):
         truth_folder = os.path.join(source_dir, "human-0")
         optimal_folder = os.path.join(source_dir, "optimal")
         tp = fp = fn = n = 0
-        n_annotations = len(glob.glob(os.path.join(ann_folder, "*.txt")))
-        for i in range(n_annotations):
-            with open(os.path.join(ann_folder, f"prompt_{i}.txt"), "r") as file:
+        for filepath in glob.glob(os.path.join(ann_folder, "*.txt")):
+            filename = os.path.basename(filepath)
+            with open(os.path.join(ann_folder, f"{filename}"), "r") as file:
                 prediction = postprocess_response(file.read())
 
             if evaluation == "optimal":
-                with open(os.path.join(optimal_folder, f"prompt_{i}.txt"), "r") as file:
+                with open(os.path.join(optimal_folder, f"{filename}"), "r") as file:
                     truth = parse_response(file.read())
             elif evaluation == "human":
-                with open(os.path.join(truth_folder, f"prompt_{i}.txt"), "r") as file:
+                with open(os.path.join(truth_folder, f"{filename}"), "r") as file:
                     truth = postprocess_response(file.read())
             else:
                 raise ValueError(f"Unknown evaluation method {evaluation}")
 
-            out = evaluate(prediction, truth)
+            out = evaluate_transitions(prediction, truth)
             tp += out[0]
             fp += out[1]
             fn += out[2]
@@ -154,6 +182,10 @@ def main(argv):
         }
 
     data = pd.DataFrame(results).transpose().convert_dtypes()
+    # put "sort" column first
+    front = data[sort]
+    data.drop(labels=[sort], axis=1, inplace=True)
+    data.insert(0, sort, front)
 
     if sort == "index":
         data.sort_index(ascending=False, inplace=True)
@@ -183,13 +215,14 @@ def main(argv):
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
-    argparser.add_argument("--match", type=str, default="c4ai-*")
+    argparser.add_argument("--match", type=str, default="gemma-7b-it-subgoals-preset-win")
+    argparser.add_argument("--exclude", type=str, default=" $^")
     argparser.add_argument("--sort", type=str, default="F1")
     argparser.add_argument("--evaluation", type=str, default="human")
     argparser.add_argument("--latex", default=False, action="store_true")
     argparser.add_argument("--highlight", default=False, action="store_true")
     argparser.add_argument(
-        "--source_dir", type=str, default="/scratch/uceeepi/calf/dataset/dataset-2/"
+        "--source_dir", type=str, default="/scratch/uceeepi/calf/dataset/dataset-3/"
     )
     args = argparser.parse_args()
 

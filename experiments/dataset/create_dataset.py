@@ -4,8 +4,9 @@ import argparse
 import os
 import json
 import random
-from typing import Tuple
+from itertools import cycle
 
+import jax.numpy as jnp
 from helx.base.mdp import Timestep
 
 from calm.decode import decode_message, decode_action, decode_observation
@@ -17,6 +18,7 @@ from calm.prompts import (
     ROLE_GENERIC,
     SYMSET_KEYROOM,
     SYMSET_KEYROOM_EXPLAINED,
+    SYMSET_NONE,
     TASK_KEYROOM,
     TASK_KEYROOM_MANUAL,
     TASK_WIN,
@@ -26,6 +28,7 @@ from calm.prompts import (
     INSTRUCTION_PROGRESS,
     INSTRUCTION_OPTIMALITY,
     INSTRUCTION_TRANSITION,
+    INSTRUCTION_TRANSITION_ACTION,
     REMARK_MESSAGE_ACTION,
     REMARK_ACTION,
     REMARK_MESSAGE,
@@ -62,6 +65,8 @@ def select_prompt(
         symset = SYMSET_KEYROOM
     elif symset_type == "keyroom_explained":
         symset = SYMSET_KEYROOM_EXPLAINED
+    elif symset_type == "none":
+        symset = SYMSET_NONE
     else:
         raise ValueError(f"Unknown symset_type {symset_type}")
 
@@ -92,6 +97,8 @@ def select_prompt(
         instructions = INSTRUCTION_OPTIMALITY
     elif instruction_type == "transition":
         instructions = INSTRUCTION_TRANSITION
+    elif instruction_type == "transition_action":
+        instructions = INSTRUCTION_TRANSITION_ACTION
     else:
         raise ValueError(f"Unknown instruction_type {instruction_type}")
 
@@ -184,7 +191,7 @@ def why_rewarding(demo: Timestep) -> str:
     # check if key is picked up
     action = decode_action(int(demo.action[0]))
     key_picked_msg = " - a key named The Master Key of Thievery"
-    
+
     if action == "pickup" and key_picked_msg in decode_message(
         demo.info["observations"]["message"][1]
     ):
@@ -192,8 +199,9 @@ def why_rewarding(demo: Timestep) -> str:
 
     # check if door has been unlocked
     if action == "apply":
-        obs_t = decode_observation(demo.observation[0])
-        obs_tp1 = decode_observation(demo.observation[1])
+        obs = demo.info["observations"]["tty_chars"]
+        obs_t = decode_observation(obs[0])
+        obs_tp1 = decode_observation(obs[1])
         if obs_t.count("+") == obs_tp1.count("+") + 1:
             return "door"
     return "non-rewarding"
@@ -228,50 +236,51 @@ def main(argv):
     config = argv.__dict__
     with open(os.path.join(dest_dir, "config.json"), "w") as file:
         json.dump(config, file)
-    
-    # read indices
-    indices_path = os.path.join(dest_dir, "demo_indices.txt")
-    if os.path.exists(indices_path):
-        with open(indices_path, "r") as file:
-            indices = file.readlines()
-    else:
-        indices = None
 
-    bins = {
-        "key": 0,
-        "door": 0,
-        "non-rewarding": 0
-    }
-    i = 0
+    # get the right target count to balance dataset
+    acquired = {"key": 0, "door": 0, "non-rewarding": 0}
+    if argv.unbalanced:
+        rewarding_ratio = 0.04  # measured empirically
+        non_rewarding_ratio = 1 - (rewarding_ratio * (len(acquired) - 1))
+        requested = {
+            "key": int(num_annotations * rewarding_ratio),
+            "door": int(num_annotations * rewarding_ratio),
+            "non-rewarding": int(num_annotations * non_rewarding_ratio),
+        }
+    else:
+        quotient, rem = divmod(num_annotations, len(acquired))
+        requested = {key: quotient for key in acquired}
+        keys = cycle(acquired.keys())
+        while rem > 0:
+            key = next(keys)
+            requested[key] += 1
+            rem -= 1
+    
+    # start collecting
+    i = -1
     loader = load_pickle_minibatches(source_path, 1, seq_len)
-    while i < num_annotations:
+    while sum(acquired.values()) < num_annotations:
+        i += 1
         # get a demonstration
         demo_batch = next(loader)
 
-        if indices is None:
-            # skip with 80% probability
-            if random.random() > 0.2:
-                continue
-
-            if len(demo_batch[0].t) < seq_len:
-                continue
-        else:
-            if str(i) not in indices:
-                continue
-        
-        print(bins)
+        if len(demo_batch[0].t) < seq_len:
+            continue
 
         # balance rewarding and non-rewarding prompts
         why = why_rewarding(demo_batch[0])
-        # if bin is fill, continue
-        if bins[why] >= num_annotations // len(bins):
-            print("Full bin for", why, f"{bins[why]}/{num_annotations // len(bins)}")
-            continue
-        bins[why] += 1
 
-        # append index to indices file
-        with open(indices_path, "a") as file:
-            file.write(f"{i}\n")
+        # skip non-rewarding with 90% probability to add variance
+        if why == "non-rewarding" and random.random() > 0.1:
+            continue
+
+        print(acquired)
+
+        # if bin is fill, continue
+        if acquired[why] == requested[why]:
+            print("Full bin for", why, f"{acquired[why]}/{requested[why]}")
+            continue
+        acquired[why] += 1
 
         print(f"Writing prompt {i} to {dest_dir}...\t", end="")
         with open(os.path.join(dest_dir, f"prompt_{i}.txt"), "w") as file:
@@ -303,8 +312,8 @@ def main(argv):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--seed", type=int, default=0)
-    argparser.add_argument("--seq_len", type=int, default=20)
-    argparser.add_argument("--num_annotations", type=int, default=10)
+    argparser.add_argument("--seq_len", type=int, default=2)
+    argparser.add_argument("--num_annotations", type=int, default=50)
 
     # paths
     argparser.add_argument(
@@ -313,16 +322,20 @@ if __name__ == "__main__":
         default="/scratch/uceeepi/calf/demonstrations/demo_2.pkl",
     )
     argparser.add_argument(
-        "--dest_dir", type=str, default="/scratch/uceeepi/calf/dataset/"
+        "--dest_dir", type=str, default="/scratch/uceeepi/calf/dataset/dataset-3"
     )
     argparser.add_argument("--ablation", type=str, default="")
+    argparser.add_argument("--unbalanced", action="store_true", default=False)
 
     # prompt options
     argparser.add_argument(
         "--role", type=str, default="generic", help="(generic, analyst)"
     )
     argparser.add_argument(
-        "--symset", type=str, default="keyroom", help="(keyroom, keyroom_explained)"
+        "--symset",
+        type=str,
+        default="keyroom",
+        help="(keyroom, keyroom_explained, none)",
     )
     argparser.add_argument(
         "--task", type=str, default="keyroom", help="(keyroom, manual, win)"

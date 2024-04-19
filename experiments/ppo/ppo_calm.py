@@ -1,47 +1,19 @@
 from __future__ import annotations
-import argparse
-
-argparser = argparse.ArgumentParser()
-argparser.add_argument("--seed", type=int, default=0)
-argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
-
-argparser.add_argument("--budget", type=int, default=10_000_000)
-argparser.add_argument("--n_actors", type=int, default=2)
-argparser.add_argument("--n_epochs", type=int, default=4)
-argparser.add_argument("--batch_size", type=int, default=128)
-argparser.add_argument("--iteration_size", type=int, default=2048)
-argparser.add_argument("--discount", type=float, default=0.99)
-argparser.add_argument("--lambda_", type=float, default=0.95)
-argparser.add_argument("--observation_key", type=str, default="glyphs")
-argparser.add_argument("--ablation", type=str, default="full")
-argparser.add_argument("--beta", type=float, default=0.1)
-argparser.add_argument(
-    "--annotations_path",
-    type=str,
-    default="/scratch/uceeepi/calf/experiment_2/ann_full.pkl",
-)
-args = argparser.parse_args()
 
 import random
 
-random.seed(args.seed)
-
 import numpy as np
-
-np.random.seed(args.seed)
-
 import gym
 import gym.vector
 import minihack
 from nle import nethack
-
+import torch
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
-
+import rlax
 from helx.base.modules import Flatten
 from helx.base.mdp import Timestep
-import rlax
 
 from calm.trial import Experiment, Agent
 from calm.ppo import HParams, PPO
@@ -76,16 +48,16 @@ class CalfExperiment(Experiment):
         return agent, log
 
 
-def main():
+def main(argv):
     hparams = HParams(
         beta=0.01,
         clip_ratio=0.2,
-        n_actors=args.n_actors,
-        n_epochs=args.n_epochs,
-        batch_size=args.batch_size,
-        discount=args.discount,
-        lambda_=args.lambda_,
-        iteration_size=args.iteration_size,
+        n_actors=argv.n_actors,
+        n_epochs=argv.n_epochs,
+        batch_size=argv.batch_size,
+        discount=argv.discount,
+        lambda_=argv.lambda_,
+        iteration_size=argv.iteration_size,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -96,29 +68,22 @@ def main():
         nethack.Command.APPLY,
     ]
     env = gym.vector.make(
-        args.env_name,
+        argv.env_name,
         observation_keys=(
-            args.observation_key,
+            argv.observation_key,
             "chars",
         ),
         actions=actions,
         max_episode_steps=100,
-        num_envs=args.n_actors,
+        num_envs=argv.n_actors,
         asynchronous=True,
-        seeds=[[args.seed]] * args.n_actors,
+        seeds=[[argv.seed]] * argv.n_actors,
     )
-    env = UndictWrapper(env, key=args.observation_key)
-    env = LLMShaperWrapper(env, table_path=args.annotations_path, beta=args.beta)
+    env = UndictWrapper(env, key=argv.observation_key)
+    env = LLMShaperWrapper(env, table_path=argv.annotations_path, beta=argv.beta)
     env = MiniHackWrapper.wraps(env)
     encoder = nn.Sequential(
         [
-            # greyscale,
-            # nn.Conv(16, (5, 5), (1, 1)),
-            # nn.tanh,
-            # nn.Conv(32, (2, 2), (1, 1)),
-            # nn.tanh,
-            # nn.Conv(64, (2, 2), (1, 1)),
-            # nn.tanh,
             Flatten(),
             nn.Dense(2048),
             nn.tanh,
@@ -128,14 +93,43 @@ def main():
             nn.tanh,
         ]
     )
-    key = jnp.asarray(jax.random.PRNGKey(args.seed))
+    key = jnp.asarray(jax.random.PRNGKey(argv.seed))
     agent = PPO.init(env, hparams, encoder, key=key)
 
     # run experiment
-    config = {**args.__dict__, **{"phase": "calf", "ablation": args.ablation}}
+    config = argv.__dict__
+    config["phase"] = "baselines"
+    config["algo"] = "ppo_calm"
     experiment = CalfExperiment("calf", config)
     experiment.run(agent, env, key)
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--seed", type=int, default=0)
+    argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
+
+    argparser.add_argument("--budget", type=int, default=10_000_000)
+    argparser.add_argument("--n_actors", type=int, default=2)
+    argparser.add_argument("--n_epochs", type=int, default=4)
+    argparser.add_argument("--batch_size", type=int, default=128)
+    argparser.add_argument("--iteration_size", type=int, default=2048)
+    argparser.add_argument("--discount", type=float, default=0.99)
+    argparser.add_argument("--lambda_", type=float, default=0.95)
+    argparser.add_argument("--observation_key", type=str, default="glyphs")
+    argparser.add_argument("--ablation", type=str, default="full")
+    argparser.add_argument("--beta", type=float, default=0.1)
+    argparser.add_argument(
+        "--annotations_path",
+        type=str,
+        default="/scratch/uceeepi/calf/experiment_2/ann_full.pkl",
+    )
+    args = argparser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
+    main(args)

@@ -18,6 +18,11 @@ If you don't know the answer to a question, please don't share false information
 ###### SYMSETS
 ##############################################################################
 
+SYMSET_NONE = """I will present you with a short extract of a gameplay made of a \
+sequence of timesteps.
+"""
+
+
 SYMSET_KEYROOM = """\
 I will present you with a short extract of a gameplay. At each timestep, symbols \
 represent the following items:
@@ -30,6 +35,7 @@ represent the following items:
 - "(" represents a useful item (pick-axe, key, lamp...)
 - "<" represents a ladder or staircase up.
 - ">" represents a ladder or staircase down.
+- "*" represents an unexplored tile.
 """
 
 
@@ -86,14 +92,11 @@ task of the agent into subgoals.
 """
 
 
-SUBGOALS_PRESET = """First, recall your knowledge of NetHack with respect to the \
-following subgoals:
+SUBGOALS_PRESET = """Consider the following subgoals:
 ```python
 subgoals = {{
     "pick up the key": None,
-    "navigate to the door": None,
-    "unlock the door": None,
-    "navigate to the staircase down": None,
+    "open the door": None,
 }}
 ```
 """
@@ -133,7 +136,13 @@ dictionary."""
 
 INSTRUCTION_TRANSITION = """Then, consider the following game transition, which \
 might or might not contain these subgoals.
-Determine if any of the subgoals you identified has been achieved at Time: 1 or not.
+Determine if any of the subgoals is achieved at Time: 1 or not.
+"""
+
+
+INSTRUCTION_TRANSITION_ACTION = """Then, consider the following game transition, which \
+might or might not contain these subgoals.
+Determine if the action taken by the agent achieves any of the subgoals.
 """
 
 ##############################################################################
@@ -256,7 +265,7 @@ PROMPT_BASE = prompt_subgoals(
     REMARK_MESSAGE_ACTION,
     OUTPUT_FORMAT_DIC,
     INPUT_TRAJ,
-    OUTPUT_REMARK
+    OUTPUT_REMARK,
 )
 
 ##############################################################################

@@ -12,6 +12,7 @@ class LLMServer:
     def __init__(
         self,
         name: str = "",
+        revision: str = "",
         host: str = "localhost",
         port: int = 5000,
         template_url: str = "",
@@ -23,13 +24,13 @@ class LLMServer:
         # init server
         self.app = Flask(__name__)
         self.app.route("/respond", methods=["POST"])(self.respond)
+        self.app.route("/ready", methods=["GET"])(self.ready)
 
         # init LLM
         if name != "":
-            self.llm = LLM(name, template_url)
+            self.llm = LLM(name, revision, template_url)
         else:
             self.llm = Gemma7B()
-        self.busy = False
 
         # init conversation registry
         self.system_prompt = system_prompt
@@ -37,6 +38,9 @@ class LLMServer:
     def serve(self, **init_kwargs):
         self.llm.init(**init_kwargs)
         return self.app.run(host=self.host, port=self.port, debug=False)
+
+    def ready(self):
+        return jsonify({"ready": True})
 
     def respond(self):
         # get the prompt from the request
@@ -66,15 +70,20 @@ if __name__ == "__main__":
     import argparse
 
     argparser = argparse.ArgumentParser()
-    argparser.add_argument("--name", type=str, default="")
+    argparser.add_argument("--name", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct")
+    argparser.add_argument("--revision", type=str, default="refs/pr/4")
     argparser.add_argument("--host", type=str, default="localhost")
     argparser.add_argument("--port", type=int, default=5000)
     argparser.add_argument("--template_url", type=str, default="")
-    argparser.add_argument('--load_in_4bit', default=False, action='store_true')
-    argparser.add_argument('--load_in_8bit', default=False, action='store_true')
+    argparser.add_argument("--load_in_4bit", default=False, action="store_true")
+    argparser.add_argument("--load_in_8bit", default=False, action="store_true")
     args = argparser.parse_args()
     server = LLMServer(
-        name=args.name, host=args.host, port=args.port, template_url=args.template_url
+        name=args.name,
+        revision=args.revision,
+        host=args.host,
+        port=args.port,
+        template_url=args.template_url,
     )
     if args.load_in_4bit:
         kwargs = {"load_in_4bit": True}

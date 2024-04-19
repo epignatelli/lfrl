@@ -9,12 +9,11 @@ import gym.vector
 import minihack
 from nle import nethack
 import jax
-import flax.linen as nn
-from helx.base.modules import Flatten
 
 from calm.trial import Experiment
 from calm.ppo import HParams, PPO
 from calm.environment import UndictWrapper, MiniHackWrapper
+from models import get_nethack_encoder
 
 
 def main(argv):
@@ -40,9 +39,8 @@ def main(argv):
         argv.env_name,
         observation_keys=(
             argv.observation_key,
-            "chars",
+            "glyphs",
             "chars_crop",
-            "message",
             "blstats",
         ),
         actions=actions,
@@ -53,23 +51,15 @@ def main(argv):
     )
     env = UndictWrapper(env, key=argv.observation_key)
     env = MiniHackWrapper.wraps(env)
-    encoder = nn.Sequential(
-        [
-            Flatten(),
-            nn.Dense(2048),
-            nn.tanh,
-            nn.Dense(1024),
-            nn.tanh,
-            nn.Dense(512),
-            nn.tanh,
-        ]
-    )
+
+    encoder = get_nethack_encoder()
     key = jax.numpy.asarray(jax.random.PRNGKey(argv.seed))
     agent = PPO.init(env, hparams, encoder, key=key)
 
     # run experiment
     config = argv.__dict__
     config["phase"] = "baselines"
+    config["algo"] = "ppo"
     experiment = Experiment("calm", config)
     experiment.run(agent, env, key)
 
@@ -87,7 +77,8 @@ if __name__ == "__main__":
     argparser.add_argument("--iteration_size", type=int, default=2048)
     argparser.add_argument("--discount", type=float, default=0.99)
     argparser.add_argument("--lambda_", type=float, default=0.95)
-    argparser.add_argument("--observation_key", type=str, default="pixel_crop")
+    argparser.add_argument("--observation_key", type=str, default="message")
+    argparser.add_argument("--log_compiles", action="store_true", default=False)
     args = argparser.parse_args()
 
     random.seed(args.seed)

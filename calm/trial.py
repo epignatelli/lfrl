@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Union
 from functools import partial
 import time
 
@@ -19,14 +19,16 @@ from flax.core.scope import VariableDict as Params
 import distrax
 from helx.envs.environment import Environment, Timestep
 
+RNNState = Dict[str, Tuple[Array, Array]]
+
 
 class HParams(struct.PyTreeNode):
     discount: float
 
 
 class Agent(struct.PyTreeNode):
-    train_state: Dict[str, Any]
     hparams: HParams
+    train_state: Dict[str, Any]
 
     @property
     def params(self) -> Params:
@@ -43,7 +45,9 @@ class Agent(struct.PyTreeNode):
         key: KeyArray,
     ) -> Agent: ...
 
-    def policy(self, params: Params, observation: Array) -> distrax.Distribution: ...
+    def policy(
+        self, params: Params, observation: Array, *, hidden_state: RNNState
+    ) -> Tuple[RNNState, distrax.Distribution]: ...
 
     def collect_experience(
         self, env: Environment, timestep: Timestep, *, key: KeyArray
@@ -87,6 +91,7 @@ class Experiment:
         frames = jnp.asarray(0)
         iteration = jnp.asarray(0)
         timestep = env.reset(key)
+        timestep.info["hidden_state"] = agent.train_state.get("hidden_state", {})
         if "return" not in timestep.info:
             timestep.info["return"] = timestep.reward
         while frames < budget:
@@ -190,22 +195,32 @@ def run_n_steps(
         timestep_tp1 = (0, s_0,  -1, 0.0,      0, info_3, G_3 = G_2 + 0.0)  RESET
     """
 
-    def policy_sample(params, observation, shape, key):
-        action_distribution = agent.policy(params, observation)
+    def policy_sample(
+        params: Params,
+        observation: Array,
+        shape: Tuple[int, ...],
+        key: Array,
+        hidden_state: RNNState,
+    ) -> Tuple[RNNState, Array, Array]:
+        hidden_state, action_distribution = agent.policy(
+            params, observation, hidden_state=hidden_state
+        )
         action, log_prob = action_distribution.sample_and_log_prob(
             seed=key, sample_shape=shape
         )
-        return action, log_prob
+        return hidden_state, jnp.asarray(action), jnp.asarray(log_prob)
 
     is_batched_env = env.ndim > 0
     if is_batched_env:
         action_shape = env.action_space.shape[1:]
-        policy_sample = jax.vmap(policy_sample, in_axes=(None, 0, None, 0))
+        policy_sample = jax.vmap(policy_sample, in_axes=(None, 0, None, 0, 0))
 
     else:
         action_shape = env.action_space.shape
 
     policy_sample = jax.jit(policy_sample, static_argnames=["shape"])
+
+    hidden_state = timestep.info.get("hidden_state", None)
 
     episode = []
     for _ in range(n_steps):
@@ -214,10 +229,16 @@ def run_n_steps(
             k1 = jax.random.split(k1, num=env.action_space.shape[0])
         episode.append(timestep)
         # step the environment
-        action, log_prob = policy_sample(
-            agent.params, timestep.observation, action_shape, k1
+        hidden_state, action, log_prob = policy_sample(
+            params=agent.params,
+            observation=timestep.observation,
+            shape=action_shape,
+            key=k1,
+            hidden_state=hidden_state,
         )
+        # log action log_prob and hidden state
         timestep.info["log_prob"] = log_prob
+        timestep.info["hidden_state"] = hidden_state
         next_timestep = env.step(k2, timestep, action)
 
         # depure return log from intrinsic rewards
@@ -236,39 +257,3 @@ def run_n_steps(
 
     batched = jtu.tree_map(lambda *x: jnp.stack(x, axis=env.ndim), *episode)
     return batched, timestep
-
-
-def run_episode(env: Environment, agent: Agent, *, key: KeyArray) -> Timestep:
-    @jax.jit
-    @partial(jax.vmap, in_axes=(None, 0, 0))
-    def policy_sample(params, observation, key):
-        action_distribution = agent.policy(params, observation)
-        action, log_prob = action_distribution.sample_and_log_prob(
-            seed=key, sample_shape=env.action_space.shape[1:]
-        )
-        return action, log_prob
-
-    timestep = env.reset(key)
-    timestep.info["return"] = timestep.reward
-    final = timestep.is_last()
-    episode = []
-    while True:
-        k1, k2, key = jax.random.split(key, num=3)
-        k1 = jax.random.split(k1, num=env.action_space.shape[0])
-        episode.append(timestep)
-        # step the environment
-        action, log_prob = policy_sample(agent.params, timestep.observation, k1)
-        timestep.info["log_prob"] = log_prob
-        next_timestep = env.step(k2, timestep, action)
-        # log return, if available
-        if "return" in timestep.info:
-            next_timestep.info["return"] = timestep.info["return"] * (
-                timestep.is_mid()
-                + (next_timestep.reward * agent.hparams.discount**timestep.t)
-            )
-        final = jnp.logical_or(final, timestep.is_last())
-        if final.all():
-            break
-        timestep = next_timestep
-
-    return jtu.tree_map(lambda *x: jnp.stack(x, axis=1), *episode)
