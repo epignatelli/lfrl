@@ -1,14 +1,14 @@
 from __future__ import annotations
 from functools import partial
-from typing import Any, Dict, Sequence, Tuple, Union
+from typing import Any, Dict, Sequence, Tuple
 
 import distrax
 import flax.linen as nn
 from flax import struct
-from flax.core.scope import VariableDict as Params
+import flax.training.train_state
+from flax.typing import VariableDict as Params
 from jax import Array
 import jax
-from jax.random import KeyArray
 from jax.lax import stop_gradient
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -19,7 +19,8 @@ from helx.base.spaces import Discrete
 from helx.base.mdp import Timestep, StepType
 from helx.envs.environment import Environment
 
-from .trial import run_n_steps, Agent, HParams as HParamsBase, RNNState
+from .models import Network
+from .trial import Agent, HParams as HParamsBase, RNNState, AgentState
 
 
 class HParams(HParamsBase):
@@ -56,46 +57,8 @@ class HParams(HParamsBase):
     """Whether to use a recurrent encoder."""
     n_hidden: int = 512
     """The number of hidden units in the recurrent encoder."""
-
-
-class Network(nn.Module):
-    """An encoder for the MiniHack environment."""
-
-    encoder: nn.Module
-    head: nn.Module
-    recurrent: bool = True
-    n_hidden: int = 512
-
-    @nn.compact
-    def __call__(
-        self,
-        x: Tuple[Array, Array, Array],
-        hidden_state: Tuple[Array, Array] | None = None,
-    ) -> Tuple[Union[Tuple[Array, Array], None], Array]:
-        # format inputs into channel-last image format
-        glyphs, chars_crop, blstats = x
-        glyphs = jnp.expand_dims(glyphs, axis=-1)
-        chars_crop = jnp.expand_dims(chars_crop, axis=-1)
-        x = (glyphs, chars_crop, blstats)
-
-        # apply the backbone
-        y: Array = self.encoder(x)
-
-        # apply the recurrent layer or a dense layer
-        if self.recurrent:
-            lstm = nn.OptimizedLSTMCell(self.n_hidden)
-            if hidden_state is None:
-                key_unused = jax.random.key(0)
-                hidden_state = lstm.initialize_carry(key_unused, y.shape)
-            hidden_state, y = nn.OptimizedLSTMCell(self.n_hidden)(hidden_state, y)
-        else:
-            y = nn.Dense(self.n_hidden)(x)
-            y = nn.relu(y)
-
-        # apply the head
-        y = self.head(y)
-
-        return hidden_state, y
+    prioritised_sampling: bool = False
+    """Whether to use td-error-based prioritised sampling"""
 
 
 class PPO(Agent):
@@ -105,13 +68,10 @@ class PPO(Agent):
     in https://arxiv.org/pdf/2006.05990.pdf and https://arxiv.org/pdf/2005.12729.pdf
     """
 
-    # static:
     hparams: HParams = struct.field(pytree_node=False)
     optimiser: optax.GradientTransformation = struct.field(pytree_node=False)
     actor: nn.Module = struct.field(pytree_node=False)
     critic: nn.Module = struct.field(pytree_node=False)
-    # dynamic:
-    train_state: Dict[str, Any] = struct.field(pytree_node=True)
 
     @classmethod
     def init(
@@ -121,16 +81,16 @@ class PPO(Agent):
         encoder: nn.Module,
         *,
         key: Array,
-    ) -> PPO:
+    ) -> Tuple[PPO, AgentState]:
         assert isinstance(env.action_space, Discrete)
         assert (
             env.observation_space.shape[0]
             == env.action_space.shape[0]
             == hparams.n_actors
         )
-
+        # agent functions
         actor = Network(
-            encoder=encoder.clone(),
+            encoder,
             head=nn.Dense(
                 env.action_space.maximum + 1,
                 kernel_init=nn.initializers.orthogonal(scale=0.01),
@@ -138,44 +98,52 @@ class PPO(Agent):
             recurrent=hparams.recurrent,
             n_hidden=hparams.n_hidden,
         )
+
         critic = Network(
-            encoder=encoder.clone(),
+            encoder,
             head=nn.Dense(1, kernel_init=nn.initializers.zeros_init()),
             recurrent=hparams.recurrent,
             n_hidden=hparams.n_hidden,
         )
 
+        # ppo state
         timestep = env.reset(key)
-        unbatched_obs_sample = (
-            timestep.info["observations"]["glyphs"][0],
-            timestep.info["observations"]["chars_crop"][0],
-            timestep.info["observations"]["blstats"][0],
+        obs = (
+            timestep.info["observations"]["glyphs"],
+            timestep.info["observations"]["chars_crop"],
+            timestep.info["observations"]["blstats"],
         )
-        actor_out, params_actor = actor.init_with_output(key, unbatched_obs_sample)
-        critic_out, params_critic = critic.init_with_output(key, unbatched_obs_sample)
+        unbatched_obs = jtu.tree_map(lambda x: x[0], obs)
+        params_actor = actor.init(key, unbatched_obs)
+        params_critic = critic.init(key, unbatched_obs)
         params = {"actor": params_actor, "critic": params_critic}
         optimiser = optax.chain(
             optax.clip_by_global_norm(hparams.gradient_clip_norm),
             optax.adam(hparams.learning_rate),
         )
-        train_state = {
-            "opt_state": optimiser.init(params),
-            "iteration": jnp.asarray(0),
-            "params": params,
-        }
+        hidden_state = {}
         if hparams.recurrent:
-            train_state["hidden_state"] = {
-                "actor": actor_out[0],
-                "critic": critic_out[0],
-            }
-        return cls(
-            hparams=hparams,
-            optimiser=optimiser,
-            actor=actor,
-            critic=critic,
-            train_state=train_state,
-        )
+            (actor_hidden, _), _ = actor.init_with_output(key, unbatched_obs)
+            (critic_hidden, _), _ = critic.init_with_output(key, unbatched_obs)
+            hidden_state = jtu.tree_map(
+                lambda x: jnp.stack([x] * hparams.n_actors),
+                {
+                    "actor": actor_hidden,
+                    "critic": critic_hidden,
+                },
+            )
 
+        # pack and return
+        ppo_state = AgentState(
+            opt_state=optimiser.init(params),
+            iteration=jnp.asarray(0),
+            params=params,
+            hidden_state=hidden_state,
+        )
+        agent = cls(hparams=hparams, optimiser=optimiser, actor=actor, critic=critic)
+        return agent, ppo_state
+
+    @jax.jit
     def policy(
         self,
         params: Params,
@@ -183,13 +151,13 @@ class PPO(Agent):
         *,
         hidden_state: RNNState,
     ) -> Tuple[RNNState, distrax.Softmax]:
-        hidden_state_actor = hidden_state.get("actor", {})
         hidden_state_actor, logits = self.actor.apply(
-            params["actor"], observation, hidden_state_actor
+            params["actor"], observation, hidden_state.get("actor", None)
         )
         hidden_state["actor"] = hidden_state_actor
         return hidden_state, distrax.Softmax(logits=jnp.asarray(logits))
 
+    @jax.jit
     def value_fn(
         self,
         params: Params,
@@ -197,16 +165,21 @@ class PPO(Agent):
         *,
         hidden_state: RNNState,
     ) -> Tuple[RNNState, Array]:
-        hidden_state_critic = hidden_state.get("critic", {})
         hidden_state_critic, value = self.critic.apply(
-            params["critic"], observation, hidden_state_critic
+            params["critic"], observation, hidden_state.get("critic", None)
         )
         hidden_state["critic"] = hidden_state_critic
         return hidden_state, jnp.asarray(value)[0]
 
     def collect_experience(
-        self, env: Environment, timestep: Timestep, *, key: KeyArray
-    ) -> Tuple[Timestep, Timestep]:
+        self,
+        env: Environment,
+        timestep: Timestep,
+        params: Params,
+        *,
+        key: Array,
+        hidden_state: RNNState,
+    ) -> Tuple[Timestep, Timestep, RNNState]:
         """Collects `n_actors` trajectories of experience of length `n_steps`
         from the environment. This method is the only one that interacts with the
         environment, and cannot be jitted unless the environment is JAX-compatible.
@@ -220,11 +193,10 @@ class PPO(Agent):
             The first axis is the number of actors, the second axis is time.
         """
         episode_length = self.hparams.iteration_size // self.hparams.n_actors
+        action_shape = env.action_space.shape[1:]
 
         def policy_sample(
-            params: Params,
             observation: Tuple[Array, Array, Array],
-            shape: Sequence[int],
             key: Array,
             hidden_state: RNNState,
         ) -> Tuple[RNNState, Array, Array]:
@@ -232,19 +204,9 @@ class PPO(Agent):
                 params, observation, hidden_state=hidden_state
             )
             action, log_prob = action_distribution.sample_and_log_prob(
-                seed=key, sample_shape=shape
+                seed=key, sample_shape=action_shape
             )
             return hidden_state, jnp.asarray(action), jnp.asarray(log_prob)
-
-        action_shape = env.action_space.shape[1:]
-        policy_sample = jax.jit(
-            jax.vmap(
-                partial(policy_sample, shape=action_shape, params=self.params),
-                in_axes=(None, 0, None, 0, 0),
-            )
-        )
-
-        hidden_state = timestep.info.get("hidden_state", None)
 
         episode = []
         for _ in range(episode_length):
@@ -257,20 +219,19 @@ class PPO(Agent):
                 timestep.info["observations"]["blstats"],
             )
             # step the environment
-            hidden_state, action, log_prob = policy_sample(
+            hidden_state, action, log_prob = jax.vmap(policy_sample)(
                 observation=obs,
-                key=k1,
+                key=jnp.asarray(k1),
                 hidden_state=hidden_state,
             )
-            # log action log_prob and hidden state
+
+            # log action log_prob
             timestep.info["log_prob"] = log_prob
-            timestep.info["hidden_state"] = hidden_state
             next_timestep = env.step(k2, timestep, action)
 
             # depure return log from intrinsic rewards
             reward = next_timestep.reward
             if "intrinsic_reward" in timestep.info:
-                timestep.info["total_reward"] = reward
                 reward = reward - timestep.info["intrinsic_reward"]
 
             # log returns
@@ -282,9 +243,9 @@ class PPO(Agent):
             timestep = next_timestep
 
         batched = jtu.tree_map(lambda *x: jnp.stack(x, axis=env.ndim), *episode)
-        return batched, timestep
+        return batched, timestep, hidden_state
 
-    def evaluate_experience(self, episodes: Timestep, timestep: Timestep) -> Timestep:
+    def evaluate_experience(self, params: Params, episodes: Timestep) -> Timestep:
         """Calculate targets for multiple concatenated episodes.
         For episodes with a total sum of T steps, it computes values and advantage
         in the range [0, T-1]"""
@@ -297,40 +258,34 @@ class PPO(Agent):
             episodes.info["observations"]["chars_crop"],
             episodes.info["observations"]["blstats"],
         )
-        # r_t \\forall t \\in [0, T-1]
-        reward = episodes.reward[1:]
-        # \\gamma^t \\forall t \\in [0, T-1]
-        discount = (episodes.is_mid() * self.hparams.discount**episodes.t)[1:]
+        discount = episodes.is_mid() * self.hparams.discount**episodes.t
 
-        hidden_state = timestep.info.get("hidden_state", {})
-        _, value = jax.vmap(self.value_fn, in_axes=(None, 0, None))(
-            self.params, obs, hidden_state=hidden_state
+        hidden_state = episodes.info.get("hidden_state", {})
+        _, value = jax.vmap(lambda o, h: self.value_fn(params, o, hidden_state=h))(
+            obs, hidden_state
         )
 
         # mask the value
-        value = value * (
-            episodes.step_type != StepType.TERMINATION
-        )  # q(s_t, a'_t) \\forall a'
+        value = value * (episodes.step_type != StepType.TERMINATION)
 
         # calculate GAE
         advantage = jnp.asarray(
             rlax.truncated_generalized_advantage_estimation(
-                reward,
-                discount,
-                self.hparams.lambda_,
-                value,
+                episodes.reward[1:],  # r_{1}, ..., r_{T}
+                discount[1:],  # γ_{1}, ..., γ_{T}
+                self.hparams.lambda_,  # scalar
+                value,  # v(s_0), ..., v(s_T)
             )
-        )
+        )  # y(s_0), ..., y(s_{T-1})
 
         # store the value and advantage in the info dict
-        episodes.info["value"] = value
+        episodes.info["value"] = value  # v(s_0), ..., y(s_T)
         if self.hparams.advantage_normalisation:
             advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-6)
-        episodes.info["advantage"] = advantage
-        # values and advantages from [0, T-1]
+        episodes.info["target"] = advantage  # y(s_0), ..., y(s_{T-1})
         return episodes
 
-    def sample_experience(self, episodes: Timestep, *, key: KeyArray) -> Timestep:
+    def sample_experience(self, episodes: Timestep, *, key: Array) -> Timestep:
         """Samples a minibatch of transitions from the collected experience with
         the "Shuffle transitions (recompute advantages)" method: see
         https://arxiv.org/pdf/2006.05990.pdf
@@ -358,11 +313,36 @@ class PPO(Agent):
         )
         return episodes.at_time[actor_idx, time_idx]  # (batch_size,)
 
+    def prioritised_sample_experience(
+        self, episodes: Timestep, *, key: Array
+    ) -> Timestep:
+        """Samples a minibatch of transitions from the collected experience with
+        the "Shuffle transitions (recompute advantages)" method: see
+        https://arxiv.org/pdf/2006.05990.pdf
+        Args:
+            episodes (Timestep): a Timestep representing a batch of trajectories.
+                The first axis is the number of actors, the second axis is time.
+            key (Array): a random key to sample actions
+        Returns:
+            Timestep: a minibatch of transitions (2-steps sars tuples) where the
+            first axis is the number of actors * n_steps // n_minibatches
+        """
+        assert episodes.t.ndim == 2, "episodes.ndim must be 2, got {} instead.".format(
+            episodes.t.ndim
+        )
+        td_error = episodes.info["value"][:, :-1] - episodes.info["target"]
+        sampling_logits = jnp.reshape(jnp.abs(td_error) + 1e-6, (-1,))
+        idx = jax.random.categorical(
+            key, sampling_logits, shape=(self.hparams.batch_size,)
+        )
+        batch_idx, time_idx = jnp.divmod(idx, episodes.length)
+        return episodes.at_time[batch_idx, time_idx]
+
     def loss(
-        self, params: Params, transition: Timestep
+        self, params: Params, transition: Timestep, value_fn, policy, hparams
     ) -> Tuple[Array, Dict[str, Array]]:
         # make sure the transition has the required info
-        assert "advantage" in transition.info
+        assert "target" in transition.info
         assert "log_prob" in transition.info
         # o_t
         observation = (
@@ -371,7 +351,7 @@ class PPO(Agent):
             transition.info["observations"]["blstats"],
         )
         # A^{\pi}(s_t, a_t)
-        advantage = stop_gradient(transition.info["advantage"])
+        advantage = stop_gradient(transition.info["target"])
         # v_{k-1}(s_t)
         action_value_old = stop_gradient(transition.info["value"])
         # a_t)
@@ -383,34 +363,28 @@ class PPO(Agent):
         hidden_state = jtu.tree_map(lambda x: x * ~transition.is_first(), hidden_state)
 
         # critic loss
-        value = self.value_fn(params, observation, hidden_state=hidden_state)[
-            1
-        ]  # v(s_t)
+        value = value_fn(params, observation, hidden_state=hidden_state)[1]  # v(s_t)
         critic_loss = 0.5 * jnp.square(value - advantage)
-        if self.hparams.value_clipping:
+        if hparams.value_clipping:
             value_clipped = jnp.clip(
                 value,
-                action_value_old - self.hparams.clip_ratio,
-                action_value_old + self.hparams.clip_ratio,
+                action_value_old - hparams.clip_ratio,
+                action_value_old + hparams.clip_ratio,
             )
             critic_loss_clipped = 0.5 * jnp.square(value_clipped - advantage)
             critic_loss = jnp.maximum(critic_loss, critic_loss_clipped)
-        critic_loss = self.hparams.value_loss_coefficient * critic_loss
+        critic_loss = hparams.value_loss_coefficient * critic_loss
 
         # actor loss
-        action_distribution = self.policy(
-            params, observation, hidden_state=hidden_state
-        )[1]
+        action_distribution = policy(params, observation, hidden_state=hidden_state)[1]
         log_prob = action_distribution.log_prob(action)
         ratio = jnp.exp(log_prob - log_prob_old)
-        clipped_ratio = jnp.clip(
-            ratio, 1 - self.hparams.clip_ratio, 1 + self.hparams.clip_ratio
-        )
+        clipped_ratio = jnp.clip(ratio, 1 - hparams.clip_ratio, 1 + hparams.clip_ratio)
         actor_loss = -jnp.minimum(ratio * advantage, clipped_ratio * advantage)
 
         # entropy
         entropy = action_distribution.entropy()
-        entropy_loss = -jnp.asarray(entropy) * jnp.asarray(self.hparams.beta)
+        entropy_loss = -jnp.asarray(entropy) * jnp.asarray(hparams.beta)
 
         # total loss
         loss = actor_loss + critic_loss + entropy_loss
@@ -425,45 +399,46 @@ class PPO(Agent):
         }
         return loss, log
 
-    @partial(jax.jit, static_argnums=2)
+    @partial(jax.jit, static_argnums=(0, 3))
     def update(
         self,
+        agent_state: AgentState,
         episodes: Timestep,
-        timestep: Timestep,
-        n_epochs: int | None = None,
         *,
-        key: KeyArray,
-    ) -> Tuple[PPO, Dict[str, Array]]:
+        key: Array,
+    ) -> Tuple[AgentState, Dict[str, Array]]:
         def batch_loss(params, transitions):
-            out = jax.vmap(self.loss, in_axes=(None, 0))(params, transitions)
+            out = jax.vmap(self.loss, in_axes=(None, 0, None, None, None))(
+                params, transitions, self.value_fn, self.policy, self.hparams
+            )
             out = jtu.tree_map(lambda x: x.mean(axis=0), out)
             return out
 
-        if n_epochs is None:
-            n_epochs = self.hparams.n_epochs
-
-        params, train_state, log = self.params, self.train_state, {}
-        for _ in range(n_epochs):
+        params, log = agent_state.params, {}
+        for _ in range(self.hparams.n_epochs):
             # calculate GAE with new (updated) value function and inject in timestep
-            hidden_states, episodes = jax.vmap(self.evaluate_experience)(
-                episodes, timestep
+            episodes = jax.vmap(self.evaluate_experience, in_axes=(None, 0))(
+                agent_state.params, episodes
             )
             # sample batch of transitions
-            transitions = self.sample_experience(episodes, key=key)
+            if self.hparams.prioritised_sampling:
+                transitions = self.prioritised_sample_experience(episodes, key=key)
+            else:
+                transitions = self.sample_experience(episodes, key=key)
             # SGD with PPO loss
             (_, log), grads = jax.value_and_grad(batch_loss, has_aux=True)(
                 params, transitions
             )
-            opt_state = train_state["opt_state"]
-            updates, opt_state = self.optimiser.update(grads, opt_state)
+            updates, opt_state = self.optimiser.update(grads, agent_state.opt_state)
             params = optax.apply_updates(params, updates)
-            # update train_state object
-            train_state["iteration"] += 1
-            train_state["opt_state"] = opt_state
-            train_state["params"] = params
+            # update agent_state object
+            agent_state = agent_state.replace(
+                iteration=agent_state.iteration + 1,
+                params=params,
+                opt_state=opt_state,
+            )
 
             # log gradients norm
             log["losses/grad_norm"] = optax.global_norm(updates)
-            if "buffer" in train_state:
-                log["buffer_size"] = len(train_state["buffer"])
-        return self.replace(train_state=train_state), log
+            log["train/avg_samples_return"] = transitions.info["return"].mean()
+        return agent_state, log

@@ -5,7 +5,6 @@ from . import buffer
 from . import lmaas
 from . import example_trajectories
 from . import ppo
-from . import dqn
 from . import trial
 from . import annotate
 from . import decode

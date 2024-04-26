@@ -1,7 +1,7 @@
 name: lfrl
 dependencies:
   - python=3.8
-  - cmake
   - ninja
+  - pip
   - pip:
     - -r requirements.txt

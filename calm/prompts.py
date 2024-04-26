@@ -5,10 +5,13 @@
 ROLE_GENERIC = """The environment is MiniHack.
 """
 
+ROLE_GENERIC_KEYROOM = """This is an analysis of gameplays of MiniHack. \
+The current environment is KeyRoom.
+"""
 
 ROLE_ANALYST = """You are a helpful and honest analyst of good gameplaying and \
-progress in the NetHack game. Always answer as helpfully as possible, while being \
-truthful.
+progress in the game of MiniHack, a simpler version of NetHack. \
+Always answer as helpfully as possible, while being truthful.
 If you don't know the answer to a question, please don't share false information.
 """
 
@@ -35,7 +38,6 @@ represent the following items:
 - "(" represents a useful item (pick-axe, key, lamp...)
 - "<" represents a ladder or staircase up.
 - ">" represents a ladder or staircase down.
-- "*" represents an unexplored tile.
 """
 
 
@@ -88,7 +90,12 @@ door, use the key to unlock the door and navigate to the staircaise down.
 ##############################################################################
 
 SUBGOALS_IDENTIFY = """First, based on your knowledge of NetHack, break down the \
-task of the agent into subgoals.
+task of the agent into subgoals. \
+"""
+
+
+SUBGOALS_IDENTIFY_MINIHACK = """First, based on your knowledge of MiniHack, \
+break down the task of the agent into key subgoals. \
 """
 
 
@@ -97,8 +104,8 @@ SUBGOALS_PRESET = """Consider the following subgoals:
 subgoals = {{
     "pick up the key": None,
     "open the door": None,
-}}
-```
+}} 
+``` \
 """
 
 ##############################################################################
@@ -140,9 +147,8 @@ Determine if any of the subgoals is achieved at Time: 1 or not.
 """
 
 
-INSTRUCTION_TRANSITION_ACTION = """Then, consider the following game transition, which \
-might or might not contain these subgoals.
-Determine if the action taken by the agent achieves any of the subgoals.
+INSTRUCTION_TRANSITION_ACTION = """Then, consider the following game transition and \
+determine if the action taken by the agent realises any of the subgoals.
 """
 
 ##############################################################################

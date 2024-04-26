@@ -13,7 +13,6 @@ from calm.ppo import PPO, HParams
 import flax.linen as nn
 from helx.base.mdp import Timestep, StepType
 from helx.base.modules import Flatten
-from jax.random import KeyArray
 
 
 # compute the advantage for each timestep
@@ -39,7 +38,7 @@ def value_targets(self, episode: Timestep) -> Tuple[Array, Array]:
 
 
 def sample_experience(
-    self, episodes: Timestep, *, key: KeyArray
+    self, episodes: Timestep, *, key: Array
 ) -> Tuple[Array, Array, Array]:
     """Samples a minibatch of transitions from the collected experience with
     the "Shuffle transitions (recompute advantages)" method: see

@@ -13,19 +13,21 @@ import jax
 from calm.trial import Experiment
 from calm.ppo import HParams, PPO
 from calm.environment import UndictWrapper, MiniHackWrapper
-from models import get_nethack_encoder
+from models import NetHackEncoder
 
 
 def main(argv):
     hparams = HParams(
-        beta=0.01,
-        clip_ratio=0.2,
+        beta=argv.beta,
+        clip_ratio=argv.clip_ratio,
         n_actors=argv.n_actors,
         n_epochs=argv.n_epochs,
         batch_size=argv.batch_size,
         discount=argv.discount,
         lambda_=argv.lambda_,
         iteration_size=argv.iteration_size,
+        recurrent=argv.recurrent,
+        prioritised_sampling=argv.prioritised_sampling,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -52,7 +54,7 @@ def main(argv):
     env = UndictWrapper(env, key=argv.observation_key)
     env = MiniHackWrapper.wraps(env)
 
-    encoder = get_nethack_encoder()
+    encoder = NetHackEncoder()
     key = jax.numpy.asarray(jax.random.PRNGKey(argv.seed))
     agent = PPO.init(env, hparams, encoder, key=key)
 
@@ -71,15 +73,22 @@ if __name__ == "__main__":
     argparser.add_argument("--seed", type=int, default=0)
     argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
     argparser.add_argument("--budget", type=int, default=10_000_000)
+    argparser.add_argument("--beta", type=float, default=0.01)
+    argparser.add_argument("--clip_ratio", type=float, default=0.2)
     argparser.add_argument("--n_actors", type=int, default=2)
     argparser.add_argument("--n_epochs", type=int, default=4)
     argparser.add_argument("--batch_size", type=int, default=128)
     argparser.add_argument("--iteration_size", type=int, default=2048)
     argparser.add_argument("--discount", type=float, default=0.99)
     argparser.add_argument("--lambda_", type=float, default=0.95)
+    argparser.add_argument("--recurrent", action="store_true", default=False)
+    argparser.add_argument("--prioritised_sampling", action="store_true", default=False)
     argparser.add_argument("--observation_key", type=str, default="message")
     argparser.add_argument("--log_compiles", action="store_true", default=False)
     args = argparser.parse_args()
+
+    if args.log_compiles == True:
+        jax.config.update("jax_log_compiles", True)
 
     random.seed(args.seed)
     np.random.seed(args.seed)

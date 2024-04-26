@@ -1,10 +1,12 @@
-# jax[cuda12_pip] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+jax[cuda12_local] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+cmake
 flax
 transformers
 accelerate
 bitsandbytes
 minihack
-nle
+nle --no-use-pep517  # see https://github.com/facebookresearch/nle/issues/359
+git+https://github.com/facebookresearch/torchbeast --no-use-pep517  # https://github.com/facebookresearch/nle/issues/359
 matplotlib
 wandb
 #llama requirements

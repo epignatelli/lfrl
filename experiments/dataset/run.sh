@@ -7,15 +7,16 @@ function cleanup {
 }
 
 function annotate {
+    echo "Annotating prompts at $2 with $1"
     if [[ $1 == *"8x7B"* || $1 == *"70b"* || $1 == *"c4ai"* || $1 == *"70B"* ]]; then
-        python ~/repos/lfrl/calm/lmaas/server.py --name="$1" --revision="$3" --load_in_4bit &
+        python ~/repos/lfrl/calm/lmaas/server.py --name="$1" --load_in_4bit &
     else
-        python ~/repos/lfrl/calm/lmaas/server.py --name="$1" --revision="$3" &
+        python ~/repos/lfrl/calm/lmaas/server.py --name="$1" &
     fi
     SERVER_PID=$!
     trap cleanup SIGINT
     wait_for_server
-    python annotate_prompts.py --prompts_dir="/scratch/uceeepi/calf/dataset/dataset-3/prompts-$2"
+    python annotate_prompts.py --prompts_dir="$2"
     kill $SERVER_PID
 }
 
@@ -39,50 +40,31 @@ function wait_for_server {
     echo -e "\nServer is ready!"
 }
 
-for ABLATION in "subgoals-preset-win"; do
-    annotate "meta-llama/Meta-Llama-3-8B-Instruct" "$ABLATION" "refs/pr/4"
-    annotate "meta-llama/Meta-Llama-3-70B-Instruct" "$ABLATION" "refs/pr/2"
-    annotate "google/gemma-1.1-7b-it" "$ABLATION"
-    annotate "google/gemma-7b-it" "$ABLATION"
-    annotate "meta-llama/Llama-2-7b-chat-hf" "$ABLATION"
-    annotate "meta-llama/Llama-2-13b-chat-hf" "$ABLATION"
-    annotate "mistralai/Mistral-7B-Instruct-v0.2" "$ABLATION"
-    annotate "CohereForAI/c4ai-command-r-v01" "$ABLATION"
-    annotate "mistralai/Mixtral-8x7B-Instruct-v0.1" "$ABLATION"
-    annotate "meta-llama/Llama-2-70b-chat-hf" "$ABLATION"
-done
+function annotate_all_models {
+    annotate "google/gemma-1.1-7b-it" "$1"
+    annotate "google/gemma-7b-it" "$1"
+    annotate "meta-llama/Meta-Llama-3-8B-Instruct" "$1"
+    annotate "meta-llama/Meta-Llama-3-70B-Instruct" "$1"
+    annotate "meta-llama/Llama-2-7b-chat-hf" "$1"
+    annotate "meta-llama/Llama-2-13b-chat-hf" "$1"
+    annotate "mistralai/Mistral-7B-Instruct-v0.2" "$1"
+    annotate "mistralai/Mixtral-8x7B-Instruct-v0.1" "$1"
+    annotate "CohereForAI/c4ai-command-r-v01" "$1"
+}
 
-# ABLATION="subgoals-preset-win"
-
-# # make dataset
+# select ablation
+ABLATION="subgoals-minihack-role-keyroom-transition-action-tty"
+PROMPTS_DIR="/scratch/uceeepi/calf/dataset/dataset-3"
 # python create_dataset.py \
 #     --source_path="/scratch/uceeepi/calf/demonstrations/demo_2.pkl" \
-#     --dest_dir="/scratch/uceeepi/calf/dataset/dataset-3" \
+#     --dest_dir=$PROMPTS_DIR \
 #     --seq_len=2 \
 #     --num_annotations=50 \
 #     --ablation=$ABLATION \
-#     --instruction="transition" \
-#     --output="transition" \
-#     --subgoals="preset" \
+#     --role="generic_keyroom" \
 #     --task="win" \
+#     --subgoals="identify_minihack" \
+#     --instruction="transition_action" \
+#     --output="transition" \
 #     --tty
-
-# annotate "google/gemma-1.1-7b-it" "$ABLATION"
-# annotate "google/gemma-7b-it" "$ABLATION"
-# annotate "meta-llama/Meta-Llama-3-8B-Instruct" "$ABLATION" "refs/pr/4"
-# annotate "meta-llama/Llama-2-7b-chat-hf" "$ABLATION"
-# annotate "meta-llama/Llama-2-13b-chat-hf" "$ABLATION"
-# annotate "mistralai/Mistral-7B-Instruct-v0.2" "$ABLATION"
-# annotate "CohereForAI/c4ai-command-r-v01" "$ABLATION"
-# annotate "mistralai/Mixtral-8x7B-Instruct-v0.1" "$ABLATION"
-# annotate "meta-llama/Meta-Llama-3-70B-Instruct" "$ABLATION" "refs/pr/2"
-# annotate "meta-llama/Llama-2-70b-chat-hf" "$ABLATION"
-
-# python evaluate_dataset.py \
-#     --sort="F1" \
-#     --latex \
-#     --evaluation="human" \
-#     --source_dir="/scratch/uceeepi/calf/dataset/dataset-3/" \
-#     --match=".*-$ABLATION" \
-#     --highlight
-# select ablation
+annotate_all_models "$PROMPTS_DIR/prompts-$ABLATION"

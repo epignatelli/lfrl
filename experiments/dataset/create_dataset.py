@@ -16,6 +16,7 @@ from calm.prompts import (
     prompt_subgoals,
     ROLE_ANALYST,
     ROLE_GENERIC,
+    ROLE_GENERIC_KEYROOM,
     SYMSET_KEYROOM,
     SYMSET_KEYROOM_EXPLAINED,
     SYMSET_NONE,
@@ -23,6 +24,7 @@ from calm.prompts import (
     TASK_KEYROOM_MANUAL,
     TASK_WIN,
     SUBGOALS_IDENTIFY,
+    SUBGOALS_IDENTIFY_MINIHACK,
     SUBGOALS_PRESET,
     INSTRUCTION_IDENTIFY,
     INSTRUCTION_PROGRESS,
@@ -57,6 +59,8 @@ def select_prompt(
         role = ROLE_GENERIC
     elif role_type == "analyst":
         role = ROLE_ANALYST
+    elif role_type == "generic_keyroom":
+        role = ROLE_GENERIC_KEYROOM
     else:
         raise ValueError(f"Unknown role_type {role_type}")
 
@@ -85,6 +89,8 @@ def select_prompt(
         subgoals = SUBGOALS_IDENTIFY
     elif subgoals_type == "preset":
         subgoals = SUBGOALS_PRESET
+    elif subgoals_type == "identify_minihack":
+        subgoals = SUBGOALS_IDENTIFY_MINIHACK
     else:
         raise ValueError(f"Unknown subgoals_type {subgoals_type}")
 

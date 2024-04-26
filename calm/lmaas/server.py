@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--name", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct")
-    argparser.add_argument("--revision", type=str, default="refs/pr/4")
+    argparser.add_argument("--revision", type=str, default="")
     argparser.add_argument("--host", type=str, default="localhost")
     argparser.add_argument("--port", type=int, default=5000)
     argparser.add_argument("--template_url", type=str, default="")

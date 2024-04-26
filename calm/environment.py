@@ -20,7 +20,6 @@ import numpy as np
 from nle import nethack
 import jax
 from jax import Array
-from jax.random import KeyArray
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from flax import struct
@@ -32,18 +31,89 @@ from .io import load_pickle_stream
 from .decode import decode_observation
 from .annotate import Annotation
 
+CLOSED_DOOR_ID = 2375
+OPEN_DOOR_ID = 2373
+KEY_PICKED_MSG_EXTRACT = np.asarray(
+    [
+        45,
+        32,
+        97,
+        32,
+        107,
+        101,
+        121,
+        32,
+        110,
+        97,
+        109,
+        101,
+        100,
+        32,
+        84,
+        104,
+        101,
+        32,
+        77,
+        97,
+        115,
+        116,
+        101,
+        114,
+        32,
+        75,
+        101,
+        121,
+        32,
+        111,
+        102,
+        32,
+        84,
+        104,
+        105,
+        101,
+        118,
+        101,
+        114,
+        121,
+        46,
+    ],
+    dtype=np.uint8,
+)
+NEVER_MIND_MSG_EXTRACT = np.asarray(
+    [
+        78,
+        101,
+        118,
+        101,
+        114,
+        32,
+        109,
+        105,
+        110,
+        100,
+        46,
+    ],
+    dtype=np.uint8,
+)
+
 
 class ShaperWrapper(gym.Wrapper):
     def __init__(self, env: MiniHack):
         super().__init__(env)
         self.is_batched = hasattr(env, "num_envs")
         self.key_id = np.asarray(2102, dtype=int)
-        self.is_key_picked = False
         self.is_door_opened = False
-        self.inv_glyphs_idx =  env._observation_keys.index("inv_glyphs")
+
+        # AttributeError: accessing private attribute '_observation_keys' is prohibited
+        # self.inv_glyphs_idx = env._observation_keys.index("inv_glyphs")
+        self.glyphs_idx = 0
+        self.inv_glyphs_idx = 6
+        self.message_idx = 5
+
+        # override reward range
+        self.reward_range = (0.0, 3.0)
 
     def reset(self, **kwargs) -> Tuple[Any | Dict]:
-        self.is_key_picked = False
         self.is_door_opened = False
         obs, info = super().reset(**kwargs)
         info["intrinsic_reward"] = 0
@@ -58,35 +128,34 @@ class ShaperWrapper(gym.Wrapper):
         obs, reward, term, trunc, info = timestep  # type: ignore
         info: Dict[str, Any] = info
 
-        info["intrinsic_reward"] = reward * 0
         # key pickup
-        r_int = self.key_picked(action) + self.door_unlocked(action)
+        r_int = self.key_picked() + self.door_unlocked(action)
         reward += r_int
         info["intrinsic_reward"] = r_int
         return obs, reward, term, trunc, info
 
-    def key_picked(self, action):
-        env: MiniHack = self.env  # type: ignore
-        # key not in inventory before actio
-        not_in_inventory = self.is_key_picked
-        # action is pickup
-        correct_action = env.actions[action] == nethack.Command.PICKUP
-        # key is in inventory after pickup
-        now_in_inventory = self.key_id in env.last_observation[self.inv_glyphs_idx]
-        picked = not_in_inventory and correct_action and now_in_inventory
-        self.is_key_picked = now_in_inventory
-        return picked
+    def key_picked(self):
+        message = self.last_observation[self.message_idx]
+        return np.array_equal(message[2:43], KEY_PICKED_MSG_EXTRACT)
 
     def door_unlocked(self, action) -> bool:
+        if self.is_door_opened:
+            # if already open, exit
+            return False
         env: MiniHack = self.env  # type: ignore
-        # door before action is closed
-        is_closed = self.is_door_opened
-        # actoin is open
-        correct_action = env.actions[action] == nethack.Command.APPLY
-        # door open after action
-        now_open = env.screen_contains("open door", env.last_observation)
-        opened = is_closed and correct_action and now_open
-        self.is_door_opened = now_open
+        if action != env.actions.index(nethack.Command.APPLY):
+            # if action is not open, exit
+            return False
+        message = self.last_observation[self.message_idx]
+        if not np.array_equal(message[:11], NEVER_MIND_MSG_EXTRACT):
+            # if message is not the one we are looking for, exit
+            return False
+        # check if door has been opened
+        glyphs = self.last_observation[self.glyphs_idx]
+        opened = bool(
+            np.all(glyphs[glyphs == CLOSED_DOOR_ID] == OPEN_DOOR_ID)
+        )
+        self.is_door_opened = opened
         return opened
 
 
@@ -116,10 +185,10 @@ class LLMShaperWrapper(gym.Wrapper):
         self.beta = beta
         self.why = stream
         self.table = table
+        self.reward_range = (0.0, 1.0)
 
     def reset(self, seed, options={}):
         obs, info = self.env.reset(seed, options)  # type: ignore
-        info["extrinsic_reward"] = 0.0
         info["intrinsic_reward"] = 0.0
         return obs, info
 
@@ -133,7 +202,6 @@ class LLMShaperWrapper(gym.Wrapper):
         key = (decode_observation(chars), str(int(action)))
         r_int = self.table.get(key, 0)
         # store
-        info["extrinsic_reward"] = reward
         info["intrinsic_reward"] = r_int
         reward += r_int * self.beta
         return obs, reward, term, trunc, info
@@ -149,7 +217,7 @@ class UndictWrapper(gym.core.Wrapper):
 
     @property
     def single_observation_space(self):
-        return self.env.single_observation_space[self.main_key]
+        return self.env.single_observation_space[self.main_key]  # type: ignore
 
     def reset(self, seed, options={}):
         obs, info = self.env.reset()
@@ -188,7 +256,7 @@ class MiniHackWrapper(GymWrapper):
         ),
     )
 
-    def reset(self, key: KeyArray) -> Timestep:
+    def reset(self, key: Array) -> Timestep:
         # compute new timestep
         seeds = jax.random.randint(key, shape=self.shape, minval=0, maxval=1_000_000)
         seeds = np.array(seeds)
@@ -203,7 +271,7 @@ class MiniHackWrapper(GymWrapper):
         timestep.info["return"] = timestep.reward
         return timestep
 
-    def step(self, key: KeyArray, timestep: Timestep, action: Array) -> Timestep:
+    def step(self, key: Array, timestep: Timestep, action: Array) -> Timestep:
         next_timestep = self.env.step(np.asarray(action))  # type: ignore
         t = jnp.asarray((timestep.t + 1) * timestep.is_mid(), dtype=jnp.int32)
         action = (action * timestep.is_mid()) - (timestep.is_last())
@@ -259,9 +327,9 @@ class MiniHackWrapper(GymWrapper):
             [StepType.TRANSITION, StepType.TERMINATION, StepType.TRUNCATION]
         )[selector]
 
-        obs = jtu.tree_map(lambda x: jnp.asarray(x, self.observation_space.dtype), obs)
-        reward = jnp.asarray(reward, dtype=self.reward_space.dtype)
-        action = jnp.asarray(action, dtype=self.action_space.dtype)
+        obs = jtu.tree_map(lambda x: jnp.asarray(x, self.observation_space.dtype), obs)  # type: ignore
+        reward = jnp.asarray(reward, dtype=self.reward_space.dtype)  # type: ignore
+        action = jnp.asarray(action, dtype=self.action_space.dtype)  # type: ignore
 
         clean_info = {k: v for k, v in info.items() if k in self.__transparent_info__}  # type: ignore
 
@@ -274,7 +342,6 @@ class MiniHackWrapper(GymWrapper):
             state=None,
             info=clean_info,
         )
-
 
 
 register(

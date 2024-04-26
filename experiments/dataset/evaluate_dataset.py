@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 
-def parse_response(response: str, strict: bool=False) -> dict:
+def parse_response(response: str, strict: bool = False) -> dict:
     if strict:
         pattern = r"```(python)?(.*)({.*})"
     else:
@@ -90,23 +90,25 @@ def evaluate(pred, truth):
 
 def evaluate_transitions(pred, truth):
     tp = 0
+    tn = 0
     fp = 0
     fn = 0
 
     # we only check if the LLM flagged the transition as rewarding
-    # we do not check the reason 
+    # we do not check the reason
     # (maybe LLM flagged because pickup but the true goal was unlock)
     pred_detected = any(pred.keys())
     truth_detected = any(truth.keys())
-    
+
     if pred_detected and truth_detected:
         tp += 1
     elif pred_detected and not truth_detected:
         fp += 1
     elif not pred_detected and truth_detected:
         fn += 1
-    n = fp + fn + tp
-    return tp, fp, fn, n
+    elif not pred_detected and not truth_detected:
+        tn += 1
+    return tp, fp, fn, tn
 
 
 def _highligh_n_best(
@@ -133,7 +135,7 @@ def main(argv):
     evaluation = argv.evaluation
     latex = argv.latex
 
-    pattern = re.compile(f'^(?!.*({argv.exclude})).*({argv.match})')
+    pattern = re.compile(f"^(?!.*({argv.exclude})).*({argv.match})")
     evaluate_folders = [x for x in os.listdir(source_dir) if re.search(pattern, x)]
     evaluate_folders += glob.glob(os.path.join(source_dir, "human-*"))
 
@@ -143,7 +145,7 @@ def main(argv):
         ann_folder = os.path.join(source_dir, folder)
         truth_folder = os.path.join(source_dir, "human-0")
         optimal_folder = os.path.join(source_dir, "optimal")
-        tp = fp = fn = n = 0
+        tp = fp = fn = tn = 0
         for filepath in glob.glob(os.path.join(ann_folder, "*.txt")):
             filename = os.path.basename(filepath)
             with open(os.path.join(ann_folder, f"{filename}"), "r") as file:
@@ -162,20 +164,24 @@ def main(argv):
             tp += out[0]
             fp += out[1]
             fn += out[2]
-            n += out[3]
+            tn += out[3]
 
+        n = len(glob.glob(os.path.join(ann_folder, "*.txt")))
         # evaluate
-        acc = tp / (n + 1e-9)
+        acc = (tp + tn) / n
         prec = tp / (tp + fp + 1e-9)
         rec = tp / (tp + fn + 1e-9)
         f1 = 2 * (prec * rec) / (prec + rec + 1e-9)
         key = os.path.basename(os.path.normpath(folder))
         results[key] = {
+            "Subgoals": "Predefined" if "preset" in folder else "Discovered",
+            "Observation": "NetHack tty" if "tty" in folder else "9x9 chars",
+            "Accuracy": acc,
+            "F1": f1,
             "Precision": prec,
             "Recall": rec,
-            "F1": f1,
-            "Accuracy": acc,
             "TP": tp,
+            "TN": tn,
             "FP": fp,
             "FN": fn,
             "Total": n,
@@ -185,15 +191,28 @@ def main(argv):
     # put "sort" column first
     front = data[sort]
     data.drop(labels=[sort], axis=1, inplace=True)
-    data.insert(0, sort, front)
+    data.insert(2, sort, front)
 
     if sort == "index":
         data.sort_index(ascending=False, inplace=True)
     else:
         data.sort_values(sort, ascending=False, inplace=True)
 
+    prompts_folder = list(filter(lambda x: "prompts" in x, evaluate_folders))
+    if len(prompts_folder) > 0:
+        prompts_folder = prompts_folder[0]
+    else:
+        raise ValueError("No prompts folder found")
+    
+    data.drop(index=prompts_folder, inplace=True)
+
     print(data)
-    # pprint(results, sort_dicts=False)
+
+    ablation = prompts_folder.split("prompts-")[-1]
+    print(ablation)
+    for model_name in data.index:
+        # remove ablation name from model name
+        data.rename(index={model_name: model_name[: -len(ablation) - 1]}, inplace=True)
     print()
     if latex:
         data = data.round(2)
@@ -215,7 +234,9 @@ def main(argv):
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
-    argparser.add_argument("--match", type=str, default="gemma-7b-it-subgoals-preset-win")
+    argparser.add_argument(
+        "--match", type=str, default="gemma-7b-it-subgoals-preset-win"
+    )
     argparser.add_argument("--exclude", type=str, default=" $^")
     argparser.add_argument("--sort", type=str, default="F1")
     argparser.add_argument("--evaluation", type=str, default="human")
