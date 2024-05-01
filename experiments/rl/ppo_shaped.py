@@ -8,6 +8,7 @@ import gym.vector
 import minihack
 from nle import nethack
 import jax
+from dataclasses import asdict
 
 from calm.trial import Experiment
 from calm.ppo import HParams, PPO
@@ -60,9 +61,11 @@ def main(argv):
     agent = PPO.init(env, hparams, encoder, key=key)
 
     # run experiment
-    config = argv.__dict__
+    config = asdict(hparams)
+    config["seed"] = argv.seed
+    config["env_name"] = argv.env_name
     config["phase"] = "baselines"
-    config["algo"] = "ppo"
+    config["algo"] = "ppo_shaped"
     experiment = Experiment("calm", config)
     experiment.run(agent, env, key)
 

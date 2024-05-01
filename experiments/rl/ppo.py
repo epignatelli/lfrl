@@ -18,7 +18,7 @@ from models import NetHackEncoder
 
 def main(argv):
     hparams = HParams(
-        beta=argv.beta,
+        beta=argv.entr_coeff,
         clip_ratio=argv.clip_ratio,
         n_actors=argv.n_actors,
         n_epochs=argv.n_epochs,
@@ -27,7 +27,8 @@ def main(argv):
         lambda_=argv.lambda_,
         iteration_size=argv.iteration_size,
         recurrent=argv.recurrent,
-        prioritised_sampling=argv.prioritised_sampling,
+        # prioritised_sampling=argv.prioritised_sampling,
+        learning_rate=argv.lr,
     )
     actions = [
         nethack.CompassCardinalDirection.N,
@@ -62,7 +63,7 @@ def main(argv):
     config = argv.__dict__
     config["phase"] = "baselines"
     config["algo"] = "ppo"
-    experiment = Experiment("calm", config)
+    experiment = Experiment(argv.exp_name, config)
     experiment.run(agent, env, key)
 
 
@@ -71,9 +72,11 @@ if __name__ == "__main__":
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--seed", type=int, default=0)
+    argparser.add_argument("--exp_name", type=str, default="calm")
     argparser.add_argument("--env_name", type=str, default="MiniHack-KeyRoom-S5-v0")
     argparser.add_argument("--budget", type=int, default=10_000_000)
-    argparser.add_argument("--beta", type=float, default=0.01)
+    argparser.add_argument("--entr_coeff", type=float, default=0.01)
+    argparser.add_argument("--lr", type=float, default=0.0002)
     argparser.add_argument("--clip_ratio", type=float, default=0.2)
     argparser.add_argument("--n_actors", type=int, default=2)
     argparser.add_argument("--n_epochs", type=int, default=4)

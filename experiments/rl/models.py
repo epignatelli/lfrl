@@ -15,23 +15,6 @@ class NetHackEncoder(nn.Module):
         # format inputs into channel-last image format
         glyphs, chars_crop, blstats = x
 
-        glyphs_embedding = nn.Sequential(
-            [
-                Lambda(partial(jnp.expand_dims, axis=-1)),
-                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
-                nn.elu,
-                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
-                nn.elu,
-                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
-                nn.elu,
-                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
-                nn.elu,
-                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
-                nn.elu,
-                Flatten(),
-            ]
-        )(glyphs)
-
         chars_embedding = nn.Sequential(
             [
                 Lambda(partial(jnp.expand_dims, axis=-1)),
@@ -48,6 +31,24 @@ class NetHackEncoder(nn.Module):
                 Flatten(),
             ]
         )(chars_crop)
+        # return chars_embedding
+    
+        glyphs_embedding = nn.Sequential(
+            [
+                Lambda(partial(jnp.expand_dims, axis=-1)),
+                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
+                nn.elu,
+                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
+                nn.elu,
+                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
+                nn.elu,
+                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
+                nn.elu,
+                nn.Conv(16, kernel_size=(3, 3), strides=1, padding=1),
+                nn.elu,
+                Flatten(),
+            ]
+        )(glyphs)
 
         blstats_embedding = nn.Sequential(
             [
